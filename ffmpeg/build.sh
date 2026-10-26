@@ -40,11 +40,13 @@ fetch https://github.com/FFmpeg/FFmpeg.git "$FFMPEG_COMMIT" "$WORK/ffmpeg"
 cd "$WORK/ffmpeg"
 # Without tags in the shallow fetch, `ffmpeg -version` would report the commit hash instead of the release.
 echo "${FFMPEG_TAG#n}" > VERSION
-# LIBXML_STATIC: libxml2 headers default to dllimport on Windows.
+# configure probes for <libxml2/libxml/xmlversion.h>, but libxml-2.0.pc only adds include/libxml2;
+# native builds get the parent from the default /usr/include, a cross build needs it spelled out.
+# The config.log tail is the only way to see why a probe failed in CI.
 PKG_CONFIG_LIBDIR="$PREFIX/lib/pkgconfig" ./configure \
     --target-os=mingw32 --arch=x86_64 --cross-prefix=$HOST- \
     --pkg-config=pkg-config --pkg-config-flags=--static \
-    --extra-cflags=-DLIBXML_STATIC --extra-ldflags=-static \
+    --extra-cflags="-I$PREFIX/include" --extra-ldflags=-static \
     --disable-everything --disable-autodetect --disable-debug --disable-doc --disable-x86asm \
     --disable-ffplay --disable-ffprobe --disable-avdevice \
     --enable-small --enable-w32threads --enable-schannel --enable-libxml2 \
@@ -53,7 +55,8 @@ PKG_CONFIG_LIBDIR="$PREFIX/lib/pkgconfig" ./configure \
     --enable-muxer=mp4,ipod,mov,matroska,webm,flv,mpegts,avi,asf \
     --enable-parser=h264,hevc,aac,av1,vp9,opus,mpegaudio,ac3 \
     --enable-bsf=aac_adtstoasc,extract_extradata,h264_mp4toannexb,hevc_mp4toannexb,vp9_superframe \
-    --enable-decoder=h264,hevc,aac,mp3
+    --enable-decoder=h264,hevc,aac,mp3 \
+    || { tail -n 60 ffbuild/config.log; exit 1; }
 make -j "$JOBS" ffmpeg.exe
 $HOST-strip ffmpeg.exe
 
