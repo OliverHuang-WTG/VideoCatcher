@@ -37,6 +37,8 @@ public partial class MainWindow : Window
         UpdateDownloads();
         UpdateProxyButton();
         ApplySidebar();
+        FavoritesList.ItemsSource = Favorites.Items;
+        RestorePlacement();
 
         // All tabs share one environment, so one profile (logins persist) and one proxy argument.
         var userData = Path.Combine(
@@ -48,7 +50,7 @@ public partial class MainWindow : Window
                 ScrollBarStyle = CoreWebView2ScrollbarStyle.FluentOverlay,
             });
 
-        Loaded += (_, _) => _ = NewTab(HomePage);
+        Loaded += (_, _) => RestoreTabs();
     }
 
     // Shared by tabs (reading captured playlists) and the downloader.
@@ -73,15 +75,63 @@ public partial class MainWindow : Window
     // url == null leaves the page blank so it can be handed to NewWindowRequested.
     internal async Task<CoreWebView2> NewTab(string? url)
     {
-        var tab = new BrowserTab(this);
-        Views.Children.Add(tab.View);
-        _tabs.Add(tab);
-        TabStrip.SelectedItem = tab;
-        LayoutTabs();
-        await tab.InitAsync(await _env, url);
+        var tab = AddTab(url, BrowserTab.BlankTitle);
+        TabStrip.SelectedItem = tab; // selecting starts loading
+        var core = await tab.LoadAsync(_env);
         // Like Edge, a new blank tab is ready for typing.
         if (url == HomePage) Address.Focus();
-        return tab.View.CoreWebView2;
+        return core;
+    }
+
+    BrowserTab AddTab(string? url, string title)
+    {
+        var tab = new BrowserTab(this, url, title);
+        Views.Children.Add(tab.View);
+        _tabs.Add(tab);
+        LayoutTabs();
+        return tab;
+    }
+
+    // Restored tabs only load when selected, so just the active one starts at launch.
+    void RestoreTabs()
+    {
+        var saved = Settings.Current.Tabs;
+        if (saved.Count == 0)
+        {
+            _ = NewTab(HomePage);
+            return;
+        }
+        foreach (var tab in saved) AddTab(tab.Url, tab.Title);
+        TabStrip.SelectedIndex = Math.Clamp(Settings.Current.SelectedTab, 0, saved.Count - 1);
+    }
+
+    // Back where it was, unless that spot is on a monitor that's no longer connected.
+    void RestorePlacement()
+    {
+        var screen = new Rect(SystemParameters.VirtualScreenLeft, SystemParameters.VirtualScreenTop,
+            SystemParameters.VirtualScreenWidth, SystemParameters.VirtualScreenHeight);
+        // The title bar has to be reachable to move the window.
+        if (Settings.Current.Window is not { } placement
+            || !screen.IntersectsWith(new Rect(placement.Left, placement.Top, placement.Width, 40)))
+        {
+            WindowStartupLocation = WindowStartupLocation.CenterScreen;
+            return;
+        }
+        WindowStartupLocation = WindowStartupLocation.Manual;
+        (Left, Top, Width, Height) = (placement.Left, placement.Top, placement.Width, placement.Height);
+        if (placement.Maximized) WindowState = WindowState.Maximized;
+    }
+
+    void SaveSession()
+    {
+        var settings = Settings.Current;
+        settings.Tabs = [.. _tabs.Select(t => new SavedTab(t.Url, t.Title))];
+        settings.SelectedTab = TabStrip.SelectedIndex;
+        // RestoreBounds holds the normal bounds while maximized or fullscreen.
+        var bounds = WindowState == WindowState.Normal ? new Rect(Left, Top, Width, Height) : RestoreBounds;
+        var maximized = (_fullScreen ? _stateBeforeFullScreen : WindowState) == WindowState.Maximized;
+        settings.Window = new WindowPlacement(bounds.Left, bounds.Top, bounds.Width, bounds.Height, maximized);
+        settings.Save();
     }
 
     internal void CloseTab(BrowserTab tab)
@@ -110,6 +160,7 @@ public partial class MainWindow : Window
         _fullScreen = on;
         TitleBar.Visibility = Toolbar.Visibility = on ? Visibility.Collapsed : Visibility.Visible;
         ApplySidebar();
+        if (Current is { } tab) ShowTab(tab);
         if (on)
         {
             _stateBeforeFullScreen = WindowState;
@@ -155,6 +206,7 @@ public partial class MainWindow : Window
 
     void ShowTab(BrowserTab tab)
     {
+        _ = tab.LoadAsync(_env);
         foreach (UIElement view in Views.Children)
             view.Visibility = view == tab.View ? Visibility.Visible : Visibility.Collapsed;
         VideoList.ItemsSource = tab.Media;
@@ -165,8 +217,16 @@ public partial class MainWindow : Window
         RailBadgeText.Text = count > 99 ? "99+" : count.ToString();
 
         var core = tab.View.CoreWebView2;
-        var source = core?.Source is { } url and not HomePage ? url : "";
+        var blank = tab.Url == HomePage;
+        var source = blank ? "" : tab.Url;
         if (!Address.IsKeyboardFocusWithin) Address.Text = source;
+        FavoritesBar.Visibility = blank && !_fullScreen ? Visibility.Visible : Visibility.Collapsed;
+        FavoritesHint.Visibility = Favorites.Items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        StarButton.Visibility = blank ? Visibility.Collapsed : Visibility.Visible;
+        var starred = Favorites.Find(tab.Url) is not null;
+        StarButton.IsChecked = starred;
+        StarButton.Content = starred ? "" : "";
+        StarButton.ToolTip = starred ? "从收藏中移除 (Ctrl+D)" : "收藏此页 (Ctrl+D)";
         AddressIcon.Text = source.StartsWith("https://") ? "" : "";
         BackButton.IsEnabled = core?.CanGoBack == true;
         ForwardButton.IsEnabled = core?.CanGoForward == true;
@@ -304,6 +364,44 @@ public partial class MainWindow : Window
 
     void Settings_Click(object sender, RoutedEventArgs e) => OpenSettings();
 
+    void Star_Click(object sender, RoutedEventArgs e) => ToggleFavorite();
+
+    void ToggleFavorite()
+    {
+        if (Current is not { } tab || tab.Url == HomePage) return;
+        if (Favorites.Find(tab.Url) is { } existing)
+            Favorites.Items.Remove(existing);
+        else
+            Favorites.Items.Add(new Favorite
+            {
+                Title = tab.Title,
+                Url = tab.Url,
+                Icon = tab.FaviconPng is { } png ? Convert.ToBase64String(png) : null,
+            });
+        Favorites.Save();
+        ShowTab(tab);
+    }
+
+    static Favorite FavoriteOf(object sender) => (Favorite)((FrameworkElement)sender).DataContext;
+
+    void Favorite_Click(object sender, RoutedEventArgs e) => Current?.Navigate(FavoriteOf(sender).Url);
+
+    void Favorite_PreviewMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ChangedButton != MouseButton.Middle) return;
+        _ = NewTab(FavoriteOf(sender).Url);
+        e.Handled = true;
+    }
+
+    void FavoriteNewTab_Click(object sender, RoutedEventArgs e) => _ = NewTab(FavoriteOf(sender).Url);
+
+    void FavoriteDelete_Click(object sender, RoutedEventArgs e)
+    {
+        Favorites.Items.Remove(FavoriteOf(sender));
+        Favorites.Save();
+        if (Current is { } tab) ShowTab(tab);
+    }
+
     void ToggleSidebar_Click(object sender, RoutedEventArgs e) => SetSidebarExpanded(!Settings.Current.SidebarExpanded);
 
     void SidebarSplitter_DragCompleted(object sender, DragCompletedEventArgs e)
@@ -363,6 +461,9 @@ public partial class MainWindow : Window
                 Address.Focus();
                 Address.SelectAll();
                 break;
+            case Key.D when ctrl:
+                ToggleFavorite();
+                break;
             case Key.F5:
                 Current?.View.Reload();
                 break;
@@ -384,6 +485,7 @@ public partial class MainWindow : Window
         }
         // ffmpeg is a separate process and would outlive the window otherwise.
         _downloader.CancelAll();
+        SaveSession();
         base.OnClosing(e);
     }
 }

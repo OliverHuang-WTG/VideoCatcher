@@ -4,6 +4,11 @@ using System.Text.Json.Serialization;
 
 namespace VideoCatcher;
 
+sealed record SavedTab(string Url, string Title);
+
+// Normal (restored) bounds, plus whether the window was maximized on top of them.
+sealed record WindowPlacement(double Left, double Top, double Width, double Height, bool Maximized);
+
 sealed class Settings
 {
     static readonly string FilePath = Path.Combine(
@@ -29,6 +34,13 @@ sealed class Settings
     public bool SidebarExpanded { get; set; } = true;
 
     public double SidebarWidth { get; set; } = 320;
+
+    // Session saved on close and restored on the next start.
+    public List<SavedTab> Tabs { get; set; } = [];
+
+    public int SelectedTab { get; set; }
+
+    public WindowPlacement? Window { get; set; }
 
     [JsonIgnore]
     public Uri? UpstreamProxy => ProxyEnabled && Proxy.Length > 0 ? new Uri(Proxy) : null;

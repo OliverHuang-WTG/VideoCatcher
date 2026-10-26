@@ -59,6 +59,24 @@
             </Style.Triggers>
         </Style>
 
+        <Style x:Key="StarButton" TargetType="ToggleButton" BasedOn="{StaticResource IconButton}">
+            <Setter Property="Width" Value="28" />
+            <Setter Property="Height" Value="26" />
+            <Setter Property="FontSize" Value="14" />
+            <Style.Triggers>
+                <Trigger Property="IsChecked" Value="True">
+                    <Setter Property="Foreground" Value="{DynamicResource AccentTextFillColorPrimaryBrush}" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="FavoriteButton" TargetType="Button" BasedOn="{StaticResource IconButton}">
+            <Setter Property="Width" Value="Auto" />
+            <Setter Property="Height" Value="28" />
+            <Setter Property="FontFamily" Value="Segoe UI" />
+            <Setter Property="FontSize" Value="12" />
+        </Style>
+
         <Style x:Key="CaptionButton" TargetType="Button" BasedOn="{StaticResource IconButton}">
             <Setter Property="Width" Value="46" />
             <Setter Property="Height" Value="40" />
@@ -178,6 +196,7 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
@@ -233,9 +252,11 @@
                     <Button Style="{StaticResource IconButton}" Content="&#xE713;" ToolTip="设置" Click="Settings_Click" />
                 </StackPanel>
 
-                <Border Height="32" Margin="8,0" Padding="12,0" CornerRadius="16"
+                <Border Height="32" Margin="8,0" Padding="12,0,3,0" CornerRadius="16"
                         Background="{DynamicResource SolidBackgroundFillColorBaseBrush}">
                     <DockPanel>
+                        <ToggleButton x:Name="StarButton" DockPanel.Dock="Right" Style="{StaticResource StarButton}"
+                                      Content="&#xE734;" Click="Star_Click" />
                         <TextBlock x:Name="AddressIcon" Text="&#xE774;" FontFamily="{StaticResource IconFont}"
                                    FontSize="12" Margin="0,0,10,0" VerticalAlignment="Center"
                                    Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
@@ -246,9 +267,54 @@
             </DockPanel>
         </Border>
 
+        <!-- Shown on the blank new-tab page only, like Edge's "only on new tabs" option. -->
+        <Border x:Name="FavoritesBar" Grid.Row="2" BorderThickness="0,0,0,1" Padding="6,2"
+                Background="{DynamicResource SolidBackgroundFillColorQuarternaryBrush}"
+                BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}">
+            <Grid>
+                <TextBlock x:Name="FavoritesHint" Text="在网页上点击地址栏右侧的星形或按 Ctrl+D，即可把它加入收藏"
+                           Style="{StaticResource SecondaryText}" VerticalAlignment="Center" Margin="6,6" />
+                <!-- ToolBar moves favorites that don't fit into its overflow menu. -->
+                <ToolBar x:Name="FavoritesList" ToolBarTray.IsLocked="True" Background="Transparent"
+                         BorderThickness="0" Padding="0">
+                    <ToolBar.ItemTemplate>
+                        <DataTemplate>
+                            <Button Style="{StaticResource FavoriteButton}" ToolTip="{Binding Url}"
+                                    Click="Favorite_Click" PreviewMouseDown="Favorite_PreviewMouseDown">
+                                <Button.ContextMenu>
+                                    <ContextMenu>
+                                        <MenuItem Header="打开" Click="Favorite_Click" />
+                                        <MenuItem Header="在新标签页打开" Click="FavoriteNewTab_Click" />
+                                        <Separator />
+                                        <MenuItem Header="删除" Click="FavoriteDelete_Click" />
+                                    </ContextMenu>
+                                </Button.ContextMenu>
+                                <StackPanel Orientation="Horizontal" Margin="8,0">
+                                    <Grid Width="16" Height="16" Margin="0,0,6,0">
+                                        <TextBlock x:Name="Globe" Text="&#xE774;" FontFamily="{StaticResource IconFont}"
+                                                   FontSize="14" Visibility="Collapsed"
+                                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                                   HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                        <Image Source="{Binding Image}" />
+                                    </Grid>
+                                    <TextBlock Text="{Binding Title}" MaxWidth="160" TextTrimming="CharacterEllipsis"
+                                               VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
+                            <DataTemplate.Triggers>
+                                <DataTrigger Binding="{Binding Image}" Value="{x:Null}">
+                                    <Setter TargetName="Globe" Property="Visibility" Value="Visible" />
+                                </DataTrigger>
+                            </DataTemplate.Triggers>
+                        </DataTemplate>
+                    </ToolBar.ItemTemplate>
+                </ToolBar>
+            </Grid>
+        </Border>
+
         <!-- The sidebar is a column beside the WebView2s rather than an overlay: WebView2 is a native window
              that would cover any WPF element drawn over it. -->
-        <Grid Grid.Row="2">
+        <Grid Grid.Row="3">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />

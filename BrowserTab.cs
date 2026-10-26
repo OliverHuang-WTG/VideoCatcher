@@ -9,7 +9,8 @@ using Microsoft.Web.WebView2.Wpf;
 
 namespace VideoCatcher;
 
-sealed class BrowserTab(MainWindow owner) : INotifyPropertyChanged
+// url: what the tab opens once loaded; null leaves it blank for NewWindowRequested to fill.
+sealed class BrowserTab(MainWindow owner, string? url, string title) : INotifyPropertyChanged
 {
     // Failures where retrying a typed host over plain http can help (Chromium's HTTPS-first fallback).
     // DNS failures are excluded: http would fail the same way.
@@ -36,8 +37,9 @@ sealed class BrowserTab(MainWindow owner) : INotifyPropertyChanged
     // Variant and rendition playlists of a captured master: the master's entry already downloads them.
     readonly HashSet<string> _children = [];
     bool _hasManifest;
-    string _title = BlankTitle;
+    string _title = title;
     ImageSource? _favicon;
+    Task<CoreWebView2>? _loading;
 
     // A typed host navigates to https first; if that navigation fails, _httpFallback is tried once.
     string? _httpsAttempt;
@@ -52,18 +54,27 @@ sealed class BrowserTab(MainWindow owner) : INotifyPropertyChanged
 
     public ImageSource? Favicon { get => _favicon; private set => Set(ref _favicon, value); }
 
+    // The favicon as PNG, kept so adding the page to favorites can store it.
+    public byte[]? FaviconPng { get; private set; }
+
+    // The page's address, or the one it will open when a restored tab hasn't loaded yet.
+    public string Url => View.CoreWebView2?.Source ?? url ?? "about:blank";
+
     public event PropertyChangedEventHandler? PropertyChanged;
 
-    public async Task InitAsync(CoreWebView2Environment env, string? url)
+    // Restored tabs show their saved title and only create their WebView2 when first selected.
+    public Task<CoreWebView2> LoadAsync(Task<CoreWebView2Environment> env) => _loading ??= InitAsync(env);
+
+    async Task<CoreWebView2> InitAsync(Task<CoreWebView2Environment> env)
     {
-        await View.EnsureCoreWebView2Async(env);
+        await View.EnsureCoreWebView2Async(await env);
         var core = View.CoreWebView2;
         core.DocumentTitleChanged += (_, _) =>
         {
             Title = core.Source == "about:blank" || core.DocumentTitle.Length == 0 ? BlankTitle : core.DocumentTitle;
             owner.OnTabChanged(this);
         };
-        core.FaviconChanged += async (_, _) => Favicon = await LoadFaviconAsync(core);
+        core.FaviconChanged += async (_, _) => (FaviconPng, Favicon) = await LoadFaviconAsync(core);
         core.SourceChanged += (_, _) => owner.OnTabChanged(this);
         core.HistoryChanged += (_, _) => owner.OnTabChanged(this);
         core.NavigationStarting += (_, e) =>
@@ -96,6 +107,7 @@ sealed class BrowserTab(MainWindow owner) : INotifyPropertyChanged
         core.ContainsFullScreenElementChanged += (_, _) => owner.SetFullScreen(core.ContainsFullScreenElement);
         core.WebResourceResponseReceived += OnResponseReceived;
         if (url is not null) core.Navigate(url);
+        return core;
     }
 
     // Edge-style address bar: a typed scheme is kept, host-like input tries https first, anything else is a search.
@@ -130,19 +142,25 @@ sealed class BrowserTab(MainWindow owner) : INotifyPropertyChanged
                 && Uri.CheckHostName(host) != UriHostNameType.Unknown);
     }
 
-    static async Task<ImageSource?> LoadFaviconAsync(CoreWebView2 core)
+    static async Task<(byte[]? Png, ImageSource? Image)> LoadFaviconAsync(CoreWebView2 core)
     {
-        if (string.IsNullOrEmpty(core.FaviconUri)) return null;
+        if (string.IsNullOrEmpty(core.FaviconUri)) return (null, null);
         using var stream = await core.GetFaviconAsync(CoreWebView2FaviconImageFormat.Png);
         using var buffer = new MemoryStream();
         await stream.CopyToAsync(buffer);
-        if (buffer.Length == 0) return null;
-        buffer.Position = 0;
+        if (buffer.Length == 0) return (null, null);
+        var png = buffer.ToArray();
+        return (png, ToImage(png));
+    }
+
+    internal static ImageSource ToImage(byte[] png)
+    {
         var image = new BitmapImage();
         image.BeginInit();
         image.CacheOption = BitmapCacheOption.OnLoad;
-        image.StreamSource = buffer;
+        image.StreamSource = new MemoryStream(png);
         image.EndInit();
+        image.Freeze();
         return image;
     }
 
