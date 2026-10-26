@@ -13,7 +13,6 @@ namespace VideoCatcher;
 // applies. ffmpeg's own HTTP input fetches one segment at a time, which is what made downloads slow.
 sealed class MediaFetcher(ProxyRelay relay)
 {
-    const int Connections = 8;
     const int Attempts = 5;
 
     // Per request, and for ranged downloads per read, so a stalled connection is retried instead of hanging.
@@ -59,7 +58,7 @@ sealed class MediaFetcher(ProxyRelay relay)
     public async Task<long?> RangedLengthAsync(MediaItem item, CancellationToken ct) =>
         await ProbeAsync(item, item.Url, ct) is (true, { } length) ? length : null;
 
-    // Segments download Connections at a time into numbered files, then concatenate in order: TS segments form a
+    // Segments download DownloadThreads at a time into numbered files, then concatenate in order: TS segments form a
     // valid TS stream, and an fMP4 init section followed by its fragments a valid fragmented MP4.
     public async Task DownloadPlaylistAsync(MediaItem item, HlsPlaylist playlist, string output,
         IProgress<(long Bytes, int Segments)> progress, CancellationToken ct)
@@ -68,7 +67,7 @@ sealed class MediaFetcher(ProxyRelay relay)
         var parts = Directory.CreateDirectory(output + ".parts").FullName;
         var keys = new ConcurrentDictionary<Uri, Task<byte[]>>();
         await Parallel.ForEachAsync(Enumerable.Range(0, segments.Count),
-            new ParallelOptions { MaxDegreeOfParallelism = Connections, CancellationToken = ct },
+            new ParallelOptions { MaxDegreeOfParallelism = Settings.Current.DownloadThreads, CancellationToken = ct },
             async (i, token) =>
             {
                 var segment = segments[i];
@@ -103,9 +102,10 @@ sealed class MediaFetcher(ProxyRelay relay)
         IProgress<(long Bytes, int Segments)> progress, CancellationToken ct)
     {
         await using (var file = File.Create(output)) file.SetLength(length);
-        var slice = (length + Connections - 1) / Connections;
-        await Parallel.ForEachAsync(Enumerable.Range(0, Connections),
-            new ParallelOptions { MaxDegreeOfParallelism = Connections, CancellationToken = ct },
+        var connections = Settings.Current.DownloadThreads;
+        var slice = (length + connections - 1) / connections;
+        await Parallel.ForEachAsync(Enumerable.Range(0, connections),
+            new ParallelOptions { MaxDegreeOfParallelism = connections, CancellationToken = ct },
             async (i, token) =>
             {
                 var position = i * slice;

@@ -18,6 +18,7 @@ public partial class SettingsWindow : Window
         SaveFolderBox.Text = settings.SaveFolder;
         ProxyBox.Text = settings.Proxy;
         MinSizeBox.Text = settings.MinSizeMB.ToString();
+        ThreadsBox.Text = settings.DownloadThreads.ToString();
     }
 
     void Browse_Click(object sender, RoutedEventArgs e)
@@ -46,6 +47,12 @@ public partial class SettingsWindow : Window
             Warn("最小文件大小应为非负整数");
             return;
         }
+        // More connections than this mostly gets a client throttled or banned by the server.
+        if (!int.TryParse(ThreadsBox.Text, out var threads) || threads is < 1 or > 32)
+        {
+            Warn("下载线程数应为 1 到 32 之间的整数");
+            return;
+        }
 
         var settings = Settings.Current;
         // With the toolbar switch off, editing the address doesn't change what traffic goes through.
@@ -59,6 +66,7 @@ public partial class SettingsWindow : Window
         settings.SaveFolder = folder;
         settings.Proxy = proxy;
         settings.MinSizeMB = minSize;
+        settings.DownloadThreads = threads;
         settings.Save();
         if (upstreamChanged) _relay.SetUpstream(settings.UpstreamProxy);
         DialogResult = true;

@@ -9,7 +9,7 @@ Built on WPF, WebView2 (the Edge engine) and ffmpeg.
 ## Features
 
 - **Automatic capture**: watches page network responses for `video/*`, `audio/*`, m3u8 (HLS), mpd (DASH) and common video extensions. Small files are filtered out by size, and range requests for the same file show up once. m3u8 entries show an estimated size, resolution and duration, and the variant playlists of a master playlist aren't listed separately.
-- **Parallel downloads**: HLS segments download 8 at a time (AES-128 decryption included), and direct files from servers that support byte ranges download in 8 parts at once. ffmpeg then only remuxes the local files.
+- **Parallel downloads**: HLS segments download several at a time (AES-128 decryption included), and direct files from servers that support byte ranges download in several parts at once; the number of connections is set in Settings (8 by default). ffmpeg then only remuxes the local files.
 - **Automatic naming**: uses the source file name, taken from the server's `Content-Disposition` header or else the last URL path segment. When there is none, or it's a generic name like `index`, `master` or `playlist`, 8 random letters are used instead. Invalid characters are replaced, and name clashes get a ` (1)` suffix.
 - **Automatic remux**: everything goes through ffmpeg `-c copy`, which changes only the container, so there's no quality loss.
 - **Proxy**: `http://` and `socks5://` (credentials optional). Browsing and downloads both use it; a toolbar switch turns it on or off instantly, no restart needed.
@@ -35,7 +35,7 @@ Download either installer from [Releases](../../releases) and run it:
 2. The sidebar on the right lists the current page's videos on top and your downloads below; drag the line between them to resize the two sections. Choose Download next to a video; progress appears in the downloads section.
 3. Collapse the sidebar with its arrow button; it shrinks to a single icon that shows how many videos were captured and expands it again. Drag its left edge to change its width. Both are remembered.
 4. Double-click a finished download to open it in the default player. Right-click it to show it in its folder or remove it from the list (the file stays on disk). Finished downloads are kept across restarts.
-5. Settings holds the save folder, proxy address and minimum file size. The toolbar's proxy button turns the proxy on or off: it's filled with the accent color and reads "代理已开" while on.
+5. Settings holds the save folder, proxy address, minimum file size and download threads (1–32 connections per download). The toolbar's proxy button turns the proxy on or off: it's filled with the accent color and reads "代理已开" while on.
 
 | Shortcut | Action |
 |---|---|

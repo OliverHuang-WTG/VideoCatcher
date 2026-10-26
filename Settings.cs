@@ -23,6 +23,9 @@ sealed class Settings
 
     public int MinSizeMB { get; set; } = 1;
 
+    // Connections per download: HLS segments fetched at once, or parts a ranged file is split into.
+    public int DownloadThreads { get; set; } = 8;
+
     public bool SidebarExpanded { get; set; } = true;
 
     public double SidebarWidth { get; set; } = 320;
