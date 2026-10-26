@@ -19,7 +19,8 @@
         </DockPanel>
 
         <!-- Headers only: WebView2s live in Views so they are never re-parented when switching tabs. -->
-        <TabControl x:Name="Tabs" Grid.Row="1" BorderThickness="0" Padding="0" SelectionChanged="Tabs_SelectionChanged" />
+        <TabControl x:Name="Tabs" Grid.Row="1" BorderThickness="0" Padding="0"
+                    SelectionChanged="Tabs_SelectionChanged" />
 
         <Grid Grid.Row="2">
             <Grid.ColumnDefinitions>

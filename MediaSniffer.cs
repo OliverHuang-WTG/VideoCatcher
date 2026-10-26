@@ -27,7 +27,8 @@ sealed class MediaItem
 
 static class MediaSniffer
 {
-    static readonly string[] VideoExts = [".mp4", ".flv", ".webm", ".mkv", ".mov", ".m4v", ".avi", ".wmv", ".ts", ".m4s"];
+    static readonly string[] VideoExts =
+        [".mp4", ".flv", ".webm", ".mkv", ".mov", ".m4v", ".avi", ".wmv", ".ts", ".m4s"];
 
     // HLS/DASH fragments. Once the page's manifest is captured they are noise; without one (e.g. bilibili's
     // whole-file .m4s streams) they are the only thing to download.

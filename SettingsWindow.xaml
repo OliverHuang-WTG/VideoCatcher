@@ -22,13 +22,15 @@
 
         <TextBlock Grid.Row="1" Text="代理" VerticalAlignment="Center" />
         <TextBox x:Name="ProxyBox" Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Margin="8,4,0,4" />
-        <TextBlock Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Margin="8,0,0,4" Foreground="Gray" TextWrapping="Wrap"
+        <TextBlock Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Margin="8,0,0,4"
+                   Foreground="Gray" TextWrapping="Wrap"
                    Text="留空直连；http://host:port 或 socks5://user:pass@host:port，保存后立即生效" />
 
         <TextBlock Grid.Row="3" Text="最小文件 (MB)" VerticalAlignment="Center" />
         <TextBox x:Name="MinSizeBox" Grid.Row="3" Grid.Column="1" Width="80" HorizontalAlignment="Left" Margin="8,4" />
 
-        <StackPanel Grid.Row="4" Grid.ColumnSpan="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,8,0,0">
+        <StackPanel Grid.Row="4" Grid.ColumnSpan="3" Orientation="Horizontal" HorizontalAlignment="Right"
+                    Margin="0,8,0,0">
             <Button Content="保存" Width="80" IsDefault="True" Click="Save_Click" />
             <Button Content="取消" Width="80" Margin="8,0,0,0" IsCancel="True" />
         </StackPanel>

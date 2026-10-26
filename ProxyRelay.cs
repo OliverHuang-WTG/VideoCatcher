@@ -113,7 +113,8 @@ sealed class ProxyRelay
     static async Task HttpConnectAsync(Stream stream, Uri proxy, string host, int port)
     {
         var auth = ProxyAuthorization(proxy) is { } line ? line + "\r\n" : "";
-        await stream.WriteAsync(Encoding.Latin1.GetBytes($"CONNECT {host}:{port} HTTP/1.1\r\nHost: {host}:{port}\r\n{auth}\r\n"));
+        var request = $"CONNECT {host}:{port} HTTP/1.1\r\nHost: {host}:{port}\r\n{auth}\r\n";
+        await stream.WriteAsync(Encoding.Latin1.GetBytes(request));
         var (head, _) = await ReadHeadAsync(stream);
         var status = head.Split("\r\n")[0];
         if (status.Split(' ')[1] != "200") throw new IOException($"Upstream proxy refused CONNECT: {status}");
@@ -156,7 +157,8 @@ sealed class ProxyRelay
 
     static string? ProxyAuthorization(Uri proxy) => proxy.UserInfo.Length == 0
         ? null
-        : "Proxy-Authorization: Basic " + Convert.ToBase64String(Encoding.UTF8.GetBytes(Uri.UnescapeDataString(proxy.UserInfo)));
+        : "Proxy-Authorization: Basic "
+          + Convert.ToBase64String(Encoding.UTF8.GetBytes(Uri.UnescapeDataString(proxy.UserInfo)));
 
     // Returns the header block and any bytes read past it (start of a request body).
     static async Task<(string Head, byte[] Body)> ReadHeadAsync(Stream stream)
