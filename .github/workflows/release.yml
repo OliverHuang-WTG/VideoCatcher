@@ -1,0 +1,51 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    env:
+      # LGPL build so bundling ffmpeg doesn't put the whole package under GPL; pinned to the 9.0 release branch.
+      FFMPEG_BUILD: ffmpeg-n9.0-latest-win64-lgpl-9.0
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Resolve version
+        run: '"VERSION=$("${{ github.ref_name }}".TrimStart("v"))" >> $env:GITHUB_ENV'
+
+      - name: Publish
+        run: >
+          dotnet publish VideoCatcher.csproj -c Release -r win-x64 --self-contained true
+          -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:Version=${{ env.VERSION }} -o publish
+
+      - name: Bundle ffmpeg
+        run: |
+          Invoke-WebRequest "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/$env:FFMPEG_BUILD.zip" -OutFile ffmpeg.zip
+          Expand-Archive ffmpeg.zip -DestinationPath ffmpeg
+          Copy-Item (Get-ChildItem ffmpeg -Recurse -Filter ffmpeg.exe | Select-Object -First 1).FullName publish/
+          Copy-Item (Get-ChildItem ffmpeg -Recurse -Filter LICENSE.txt | Select-Object -First 1).FullName publish/ffmpeg-LICENSE.txt
+
+      - name: Build installer
+        run: |
+          choco install innosetup --no-progress -y
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DAppVersion=${{ env.VERSION }} installer\VideoCatcher.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release create ${{ github.ref_name }} dist/VideoCatcher-Setup-${{ env.VERSION }}.exe
+          --title "VideoCatcher ${{ github.ref_name }}"
+          --notes "Windows x64 installer (per-user, no admin). Bundles FFmpeg ${{ env.FFMPEG_BUILD }} (LGPL) from BtbN/FFmpeg-Builds; see ffmpeg-LICENSE.txt in the install folder."
