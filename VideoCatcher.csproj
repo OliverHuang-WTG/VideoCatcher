@@ -7,9 +7,15 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>VideoCatcher</RootNamespace>
+    <ApplicationIcon>Assets\VideoCatcher.ico</ApplicationIcon>
     <!-- Application.ThemeMode (built-in Fluent theme) is still marked experimental. -->
     <NoWarn>$(NoWarn);WPF0001</NoWarn>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- ApplicationIcon only covers the exe; the window and title bar load it as a WPF resource. -->
+    <Resource Include="Assets\VideoCatcher.ico" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2903.40" />
