@@ -13,21 +13,19 @@ Built on WPF, WebView2 (the Edge engine) and ffmpeg.
 - **Automatic naming**: uses the source file name, taken from the server's `Content-Disposition` header or else the last URL path segment. When there is none, or it's a generic name like `index`, `master` or `playlist`, 8 random letters are used instead. Invalid characters are replaced, and name clashes get a ` (1)` suffix.
 - **Automatic remux**: everything goes through ffmpeg `-c copy`, which changes only the container, so there's no quality loss.
 - **Proxy**: `http://` and `socks5://` (credentials optional). Browsing and downloads both use it; a toolbar switch turns it on or off instantly, no restart needed.
+- **Favorites**: star a page from the address bar (or Ctrl+D); the favorites bar shows on new tabs.
+- **Session restore**: tabs, the selected tab, and window size and position come back on the next start; restored tabs load only when you switch to them.
 - Edge-style UI that follows the system light/dark theme: tabs in the title bar, https auto-completion in the address bar, multiple tabs, fullscreen playback, persistent logins.
 
 ## Install
 
-Download either installer from [Releases](../../releases) and run it:
+Download `VideoCatcher-Setup-x.y.z.exe` from [Releases](../../releases) and run it:
 
-| Installer | Notes |
-|---|---|
-| `VideoCatcher-Setup-x.y.z.exe` | Includes the .NET runtime; nothing else to install |
-| `VideoCatcher-Setup-x.y.z-NoRuntime.exe` | Smaller; requires the [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0) (x64). If it's missing, the app offers a download link on first launch |
-
-- Both installers bundle ffmpeg and install the same app; whichever you install last replaces the other.
+- Requires the [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0) (x64). If it's missing, the app offers a download link on first launch.
+- ffmpeg is bundled.
 - Installs per user to `%LocalAppData%\Programs\VideoCatcher`; no admin rights needed.
 - Requires the WebView2 Runtime (built into Windows 11, and usually already present on Windows 10).
-- The installers are unsigned. If SmartScreen warns about an unknown publisher, choose "More info → Run anyway".
+- The installer is unsigned. If SmartScreen warns about an unknown publisher, choose "More info → Run anyway".
 
 ## Usage
 
@@ -36,12 +34,15 @@ Download either installer from [Releases](../../releases) and run it:
 3. Collapse the sidebar with its arrow button; it shrinks to a single icon that shows how many videos were captured and expands it again. Drag its left edge to change its width. Both are remembered.
 4. Double-click a finished download to open it in the default player. Right-click it to show it in its folder or remove it from the list, or use "清空列表" in the section header to remove every finished, failed or cancelled entry at once (files stay on disk either way). Finished downloads are kept across restarts.
 5. Settings holds the save folder, proxy address, minimum file size and download threads (1–32 connections per download). The toolbar's proxy button turns the proxy on or off: it's filled with the accent color and reads "代理已开" while on.
+6. Click the star at the right end of the address bar (or press Ctrl+D) to add or remove the current page from favorites. The favorites bar appears on new tabs: click to open, middle-click to open in a new tab, right-click to delete. Favorites that don't fit move into the bar's overflow menu.
+7. Closing the window saves the open tabs and window placement; the next start restores them. Restored tabs show their saved titles and load when selected. Back/forward history and captured video lists aren't restored.
 
 | Shortcut | Action |
 |---|---|
 | Ctrl+T | New tab |
 | Ctrl+W / middle-click a tab | Close tab |
 | Ctrl+L | Focus the address bar |
+| Ctrl+D | Add or remove the current page from favorites |
 | F5 | Reload |
 
 ### Output formats
@@ -77,8 +78,9 @@ The toolbar's proxy button is highlighted while the proxy is on; when it's off o
 
 | Data | Path |
 |---|---|
-| Settings | `%AppData%\VideoCatcher\settings.json` |
+| Settings and last session | `%AppData%\VideoCatcher\settings.json` |
 | Download history | `%AppData%\VideoCatcher\downloads.json` |
+| Favorites | `%AppData%\VideoCatcher\favorites.json` |
 | Browser data (cookies, logins) | `%LocalAppData%\VideoCatcher\WebView2` |
 
 ## Build from source
@@ -86,7 +88,7 @@ The toolbar's proxy button is highlighted while the proxy is on; when it's off o
 Requires the .NET 10 SDK:
 
 ```bash
-dotnet publish VideoCatcher.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o publish
+dotnet publish VideoCatcher.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -o publish
 ```
 
 Put `ffmpeg.exe` in `publish/` next to `VideoCatcher.exe` (otherwise `ffmpeg` from PATH is used). Any full ffmpeg build works. To match the minimal build in the installers, install `gcc-mingw-w64-x86-64` and `cmake` on Linux or WSL and run:
@@ -97,7 +99,7 @@ bash ffmpeg/build.sh ffmpeg-out
 
 ## Releasing
 
-Pushing a `v*` tag triggers [release.yml](.github/workflows/release.yml). It cross-compiles the minimal ffmpeg on Ubuntu (cached by the contents of `build.sh`) and smoke-tests it against public test streams, publishes self-contained and framework-dependent builds, packages both with Inno Setup, and creates the GitHub release.
+Pushing a `v*` tag triggers [release.yml](.github/workflows/release.yml). It cross-compiles the minimal ffmpeg on Ubuntu (cached by the contents of `build.sh`) and smoke-tests it against public test streams, publishes a framework-dependent build, packages it with Inno Setup, and creates the GitHub release.
 
 ```bash
 git tag vX.Y.Z

@@ -13,18 +13,16 @@
 - **自动命名**：用源文件名——优先取服务器 `Content-Disposition` 里的文件名，其次取 URL 最后一段；没有文件名或是 `index`、`master`、`playlist` 这类通用名时，生成 8 位随机字母。清洗非法字符，重名自动加 ` (1)`。
 - **自动转封装**：统一用 ffmpeg `-c copy`，只换容器不重新编码，画质无损。
 - **代理**：支持 `http://` 和 `socks5://`（可带用户名密码），浏览和下载都走代理；工具栏一键开关，立即生效，无需重启。
+- **收藏**：点地址栏的星形（或按 Ctrl+D）收藏当前页面；新标签页上显示收藏栏。
+- **恢复上次状态**：标签页、当前选中的标签页、窗口位置和大小，下次打开时恢复；恢复的标签页切换过去时才加载。
 - Edge 风格界面（跟随系统浅色/深色）：标签页在标题栏、地址栏自动补全 https、多标签、全屏播放、登录状态持久保存。
 
 ## 安装
 
-从 [Releases](../../releases) 下载任一安装包运行：
+从 [Releases](../../releases) 下载 `VideoCatcher-Setup-x.y.z.exe` 运行：
 
-| 安装包 | 说明 |
-|---|---|
-| `VideoCatcher-Setup-x.y.z.exe` | 自带 .NET 运行时，无需另装任何东西 |
-| `VideoCatcher-Setup-x.y.z-NoRuntime.exe` | 体积更小，需要先装 [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0)（x64）；没装时首次启动会弹出下载提示 |
-
-- 两个安装包都自带 ffmpeg，装的是同一个程序，后装的会覆盖先装的。
+- 需要先装 [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0)（x64）；没装时首次启动会弹出下载提示。
+- 已自带 ffmpeg。
 - 按用户安装到 `%LocalAppData%\Programs\VideoCatcher`，不需要管理员权限。
 - 依赖 WebView2 Runtime（Windows 11 自带，Windows 10 一般也已安装）。
 - 安装包未签名，SmartScreen 提示「未知发布者」时选「更多信息 → 仍要运行」。
@@ -36,12 +34,15 @@
 3. 点侧边栏的箭头按钮可以收起侧边栏，收起后只剩一个图标，显示抓到的视频数量，点它重新展开；拖动侧边栏左边缘可以调整宽度。展开状态和宽度都会记住。
 4. 下载完成后双击即可用系统默认播放器打开；右键可以「在文件夹中显示」或「从列表移除」；下载区标题栏的「清空列表」可以一次移除所有已完成、失败和已取消的条目（都不会删除文件）。已完成的下载在重启程序后仍会保留。
 5. 「设置」里可修改保存目录、代理地址、最小文件大小和下载线程数（每个下载 1 到 32 个连接）。工具栏的「代理」按钮开关代理：开启时按钮填充为强调色，并显示「代理已开」。
+6. 点地址栏右端的星形（或按 Ctrl+D）收藏或取消收藏当前页面。收藏栏显示在新标签页上：左键打开，中键在新标签页打开，右键删除；放不下的收藏收进收藏栏右侧的溢出菜单。
+7. 关闭窗口时会保存打开的标签页和窗口位置，下次打开时恢复。恢复的标签页先显示保存的标题，切换过去时才加载。前进/后退历史和抓到的视频列表不会恢复。
 
 | 快捷键 | 作用 |
 |---|---|
 | Ctrl+T | 新标签 |
 | Ctrl+W / 鼠标中键点标签 | 关闭标签 |
 | Ctrl+L | 定位到地址栏 |
+| Ctrl+D | 收藏或取消收藏当前页面 |
 | F5 | 刷新 |
 
 ### 输出格式
@@ -77,8 +78,9 @@ socks5://user:pass@127.0.0.1:1080
 
 | 内容 | 路径 |
 |---|---|
-| 设置 | `%AppData%\VideoCatcher\settings.json` |
+| 设置和上次的会话 | `%AppData%\VideoCatcher\settings.json` |
 | 下载记录 | `%AppData%\VideoCatcher\downloads.json` |
+| 收藏 | `%AppData%\VideoCatcher\favorites.json` |
 | 浏览器数据（Cookie、登录状态） | `%LocalAppData%\VideoCatcher\WebView2` |
 
 ## 从源码构建
@@ -86,7 +88,7 @@ socks5://user:pass@127.0.0.1:1080
 需要 .NET 10 SDK：
 
 ```bash
-dotnet publish VideoCatcher.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o publish
+dotnet publish VideoCatcher.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -o publish
 ```
 
 把 `ffmpeg.exe` 放到 `publish/` 下与 `VideoCatcher.exe` 同目录（找不到时会使用 PATH 中的 `ffmpeg`）。任何完整版 ffmpeg 都可以；要和安装包里的精简版一致，在 Linux 或 WSL 上安装 `gcc-mingw-w64-x86-64` 和 `cmake` 后运行：
@@ -97,7 +99,7 @@ bash ffmpeg/build.sh ffmpeg-out
 
 ## 发布
 
-推送 `v*` 格式的 tag 会触发 [release.yml](.github/workflows/release.yml)：在 Ubuntu 上交叉编译精简版 ffmpeg（结果按 `build.sh` 的内容缓存）并用公开测试流做冒烟测试，再分别发布自包含版和依赖框架版、用 Inno Setup 打出两个安装包，并创建 GitHub Release。
+推送 `v*` 格式的 tag 会触发 [release.yml](.github/workflows/release.yml)：在 Ubuntu 上交叉编译精简版 ffmpeg（结果按 `build.sh` 的内容缓存）并用公开测试流做冒烟测试，再发布依赖框架版、用 Inno Setup 打包，并创建 GitHub Release。
 
 ```bash
 git tag vX.Y.Z
