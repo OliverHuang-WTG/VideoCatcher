@@ -24,7 +24,7 @@
         <TextBox x:Name="ProxyBox" Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Margin="8,4,0,4" />
         <TextBlock Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Margin="8,0,0,4"
                    Foreground="Gray" TextWrapping="Wrap"
-                   Text="留空直连；http://host:port 或 socks5://user:pass@host:port，保存后立即生效" />
+                   Text="http://host:port 或 socks5://user:pass@host:port，保存后立即生效；用工具栏的「代理」按钮开关" />
 
         <TextBlock Grid.Row="3" Text="最小文件 (MB)" VerticalAlignment="Center" />
         <TextBox x:Name="MinSizeBox" Grid.Row="3" Grid.Column="1" Width="80" HorizontalAlignment="Left" Margin="8,4" />

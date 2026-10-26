@@ -18,10 +18,13 @@ sealed class Settings
     // Empty = direct; otherwise http://[user:pass@]host:port or socks5://[user:pass@]host:port.
     public string Proxy { get; set; } = "";
 
+    // Toolbar switch; keeps Proxy so turning it back on needs no retyping.
+    public bool ProxyEnabled { get; set; } = true;
+
     public int MinSizeMB { get; set; } = 1;
 
     [JsonIgnore]
-    public Uri? ProxyUri => Proxy.Length == 0 ? null : new Uri(Proxy);
+    public Uri? UpstreamProxy => ProxyEnabled && Proxy.Length > 0 ? new Uri(Proxy) : null;
 
     public void Save()
     {

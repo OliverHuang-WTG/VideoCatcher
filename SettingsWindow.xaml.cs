@@ -48,9 +48,10 @@ public partial class SettingsWindow : Window
         }
 
         var settings = Settings.Current;
-        var proxyChanged = proxy != settings.Proxy;
+        // With the toolbar switch off, editing the address doesn't change what traffic goes through.
+        var upstreamChanged = proxy != settings.Proxy && settings.ProxyEnabled;
         // Switching drops every relayed connection, including the ones ffmpeg is downloading through.
-        if (proxyChanged && _downloader.HasActive &&
+        if (upstreamChanged && _downloader.HasActive &&
             MessageBox.Show(this, "切换代理会中断正在进行的下载，继续？", Title,
                 MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
             return;
@@ -59,7 +60,7 @@ public partial class SettingsWindow : Window
         settings.Proxy = proxy;
         settings.MinSizeMB = minSize;
         settings.Save();
-        if (proxyChanged) _relay.SetUpstream(settings.ProxyUri);
+        if (upstreamChanged) _relay.SetUpstream(settings.UpstreamProxy);
         DialogResult = true;
     }
 

@@ -1,62 +1,53 @@
 using System.Collections.ObjectModel;
-using System.Text.Json;
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Input;
+using System.ComponentModel;
+using System.IO;
+using System.Runtime.CompilerServices;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
 
 namespace VideoCatcher;
 
-sealed class BrowserTab
+sealed class BrowserTab(MainWindow owner) : INotifyPropertyChanged
 {
-    const string PageInfoScript = """
-        ({
-            title: document.querySelector('meta[property="og:title"]')?.content || document.title,
-            site: document.querySelector('meta[property="og:site_name"]')?.content || ''
-        })
-        """;
+    // Failures where retrying a typed host over plain http can help (Chromium's HTTPS-first fallback).
+    // DNS failures are excluded: http would fail the same way.
+    static readonly HashSet<CoreWebView2WebErrorStatus> HttpFallbackErrors =
+    [
+        CoreWebView2WebErrorStatus.CertificateCommonNameIsIncorrect,
+        CoreWebView2WebErrorStatus.CertificateExpired,
+        CoreWebView2WebErrorStatus.ClientCertificateContainsErrors,
+        CoreWebView2WebErrorStatus.CertificateRevoked,
+        CoreWebView2WebErrorStatus.CertificateIsInvalid,
+        CoreWebView2WebErrorStatus.ServerUnreachable,
+        CoreWebView2WebErrorStatus.Timeout,
+        CoreWebView2WebErrorStatus.ErrorHttpInvalidServerResponse,
+        CoreWebView2WebErrorStatus.ConnectionAborted,
+        CoreWebView2WebErrorStatus.ConnectionReset,
+        CoreWebView2WebErrorStatus.Disconnected,
+        CoreWebView2WebErrorStatus.CannotConnect,
+    ];
 
-    readonly MainWindow _owner;
-    readonly TextBlock _title = new()
-    {
-        Text = "新标签",
-        MaxWidth = 160,
-        TextTrimming = TextTrimming.CharacterEllipsis,
-        VerticalAlignment = VerticalAlignment.Center,
-    };
     readonly HashSet<string> _seen = [];
     bool _hasManifest;
+    string _title = "新标签";
+    ImageSource? _favicon;
 
-    public BrowserTab(MainWindow owner)
-    {
-        _owner = owner;
-        var close = new Button
-        {
-            Content = "×",
-            Margin = new Thickness(6, 0, 0, 0),
-            Padding = new Thickness(4, 0, 4, 0),
-            BorderThickness = new Thickness(0),
-            Background = Brushes.Transparent,
-        };
-        close.Click += (_, _) => _owner.CloseTab(this);
-        Tab = new TabItem
-        {
-            Header = new StackPanel { Orientation = Orientation.Horizontal, Children = { _title, close } },
-            Tag = this,
-        };
-        Tab.MouseDown += (_, e) =>
-        {
-            if (e.ChangedButton == MouseButton.Middle) _owner.CloseTab(this);
-        };
-    }
-
-    public TabItem Tab { get; }
+    // A typed host navigates to https first; if that navigation fails, _httpFallback is tried once.
+    string? _httpsAttempt;
+    ulong? _httpsNavigationId;
+    string? _httpFallback;
 
     public WebView2 View { get; } = new();
 
     public ObservableCollection<MediaItem> Media { get; } = [];
+
+    public string Title { get => _title; private set => Set(ref _title, value); }
+
+    public ImageSource? Favicon { get => _favicon; private set => Set(ref _favicon, value); }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
 
     public async Task InitAsync(CoreWebView2Environment env, string? url)
     {
@@ -64,27 +55,89 @@ sealed class BrowserTab
         var core = View.CoreWebView2;
         core.DocumentTitleChanged += (_, _) =>
         {
-            _title.Text = core.DocumentTitle;
-            _owner.OnTabChanged(this);
+            Title = core.DocumentTitle;
+            owner.OnTabChanged(this);
         };
-        core.SourceChanged += (_, _) => _owner.OnTabChanged(this);
-        core.HistoryChanged += (_, _) => _owner.OnTabChanged(this);
-        core.NavigationStarting += (_, _) =>
+        core.FaviconChanged += async (_, _) => Favicon = await LoadFaviconAsync(core);
+        core.SourceChanged += (_, _) => owner.OnTabChanged(this);
+        core.HistoryChanged += (_, _) => owner.OnTabChanged(this);
+        core.NavigationStarting += (_, e) =>
         {
+            if (e.Uri == _httpsAttempt)
+            {
+                _httpsNavigationId = e.NavigationId;
+                _httpsAttempt = null;
+            }
             Media.Clear();
             _seen.Clear();
             _hasManifest = false;
+            owner.OnTabChanged(this);
+        };
+        // Matched by id: a navigation cancelled by the new one completes after the new one starts.
+        core.NavigationCompleted += (_, e) =>
+        {
+            if (e.NavigationId != _httpsNavigationId) return;
+            _httpsNavigationId = null;
+            if (!e.IsSuccess && HttpFallbackErrors.Contains(e.WebErrorStatus)) core.Navigate(_httpFallback!);
         };
         // Handing over a real CoreWebView2 (instead of just the URL) keeps window.opener, which OAuth popups need.
         core.NewWindowRequested += async (_, e) =>
         {
             var deferral = e.GetDeferral();
-            e.NewWindow = await _owner.NewTab(null);
+            e.NewWindow = await owner.NewTab(null);
             deferral.Complete();
         };
-        core.ContainsFullScreenElementChanged += (_, _) => _owner.SetFullScreen(core.ContainsFullScreenElement);
+        core.ContainsFullScreenElementChanged += (_, _) => owner.SetFullScreen(core.ContainsFullScreenElement);
         core.WebResourceResponseReceived += OnResponseReceived;
         if (url is not null) core.Navigate(url);
+    }
+
+    // Edge-style address bar: a typed scheme is kept, host-like input tries https first, anything else is a search.
+    public void Navigate(string input)
+    {
+        var text = input.Trim();
+        if (text.Length == 0 || View.CoreWebView2 is not { } core) return;
+
+        if ((text.Contains("://") || text.StartsWith("about:", StringComparison.OrdinalIgnoreCase))
+            && Uri.TryCreate(text, UriKind.Absolute, out var typed))
+        {
+            core.Navigate(typed.AbsoluteUri);
+        }
+        else if (LooksLikeHost(text) && Uri.TryCreate("https://" + text, UriKind.Absolute, out var https))
+        {
+            _httpsAttempt = https.AbsoluteUri;
+            _httpFallback = "http://" + text;
+            core.Navigate(_httpsAttempt);
+        }
+        else
+        {
+            core.Navigate("https://www.bing.com/search?q=" + Uri.EscapeDataString(text));
+        }
+    }
+
+    static bool LooksLikeHost(string text)
+    {
+        if (text.Any(char.IsWhiteSpace)) return false;
+        var host = text.Split('/', '?', '#')[0].Split(':')[0];
+        return host.Equals("localhost", StringComparison.OrdinalIgnoreCase)
+            || (host.Contains('.') && !host.StartsWith('.') && !host.EndsWith('.')
+                && Uri.CheckHostName(host) != UriHostNameType.Unknown);
+    }
+
+    static async Task<ImageSource?> LoadFaviconAsync(CoreWebView2 core)
+    {
+        if (string.IsNullOrEmpty(core.FaviconUri)) return null;
+        using var stream = await core.GetFaviconAsync(CoreWebView2FaviconImageFormat.Png);
+        using var buffer = new MemoryStream();
+        await stream.CopyToAsync(buffer);
+        if (buffer.Length == 0) return null;
+        buffer.Position = 0;
+        var image = new BitmapImage();
+        image.BeginInit();
+        image.CacheOption = BitmapCacheOption.OnLoad;
+        image.StreamSource = buffer;
+        image.EndInit();
+        return image;
     }
 
     async void OnResponseReceived(object? sender, CoreWebView2WebResourceResponseReceivedEventArgs e)
@@ -104,23 +157,31 @@ sealed class BrowserTab
         _seen.Add(key);
         if (kind == MediaKind.Manifest) _hasManifest = true;
 
+        // Read everything from the event args before awaiting; they aren't guaranteed valid afterwards.
         var core = View.CoreWebView2;
+        var name = FileNamer.SourceName(url, GetHeader(e.Response.Headers, "Content-Disposition"));
+        var referer = GetHeader(e.Request.Headers, "Referer") ?? core.Source;
+        var userAgent = GetHeader(e.Request.Headers, "User-Agent") ?? core.Settings.UserAgent;
         var cookies = await core.CookieManager.GetCookiesAsync(url.AbsoluteUri);
-        using var page = JsonDocument.Parse(await core.ExecuteScriptAsync(PageInfoScript));
         Media.Add(new MediaItem
         {
             Url = url,
             Kind = kind.Value,
             Size = size,
-            Referer = GetHeader(e.Request.Headers, "Referer") ?? core.Source,
-            UserAgent = GetHeader(e.Request.Headers, "User-Agent") ?? core.Settings.UserAgent,
+            Name = name,
+            Referer = referer,
+            UserAgent = userAgent,
             Cookie = string.Join("; ", cookies.Select(c => $"{c.Name}={c.Value}")),
-            Title = page.RootElement.GetProperty("title").GetString() ?? "",
-            Site = page.RootElement.GetProperty("site").GetString() ?? "",
-            PageUrl = new Uri(core.Source),
         });
+        owner.OnTabChanged(this);
     }
 
     static string? GetHeader(IEnumerable<KeyValuePair<string, string>> headers, string name) =>
         headers.FirstOrDefault(h => string.Equals(h.Key, name, StringComparison.OrdinalIgnoreCase)).Value;
+
+    void Set<T>(ref T field, T value, [CallerMemberName] string name = "")
+    {
+        field = value;
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+    }
 }

@@ -1,5 +1,6 @@
 using System.IO;
-using System.Text.RegularExpressions;
+using System.Net.Http.Headers;
+using System.Security.Cryptography;
 
 namespace VideoCatcher;
 
@@ -7,34 +8,37 @@ static class FileNamer
 {
     const int MaxNameLength = 150;
 
-    // Suffixes sites append to the title that og:site_name doesn't cover.
-    static readonly string[] KnownSuffixes = ["_哔哩哔哩_bilibili", " - YouTube"];
+    // Names CDNs and players give every stream; keeping them would turn every download into "index (n)".
+    static readonly HashSet<string> GenericNames = new(
+        ["index", "master", "playlist", "manifest", "chunklist", "prog_index", "videoplayback"],
+        StringComparer.OrdinalIgnoreCase);
 
     // Windows rejects these as file names regardless of extension (CON, NUL.txt, ...).
     static readonly HashSet<string> ReservedNames = new(
         ["CON", "PRN", "AUX", "NUL", .. Enumerable.Range(1, 9).SelectMany(i => new[] { $"COM{i}", $"LPT{i}" })],
         StringComparer.OrdinalIgnoreCase);
 
-    // Returns a full path in folder that isTaken rejects for neither the plain nor a " (n)" variant.
-    public static string Build(MediaItem item, string folder, string ext, Func<string, bool> isTaken)
+    // Base name (no extension) from the server's Content-Disposition, else the last URL path segment,
+    // else 8 random letters.
+    public static string SourceName(Uri url, string? contentDisposition)
     {
-        var name = Sanitize(StripSiteSuffix(item.Title.Trim(), item.Site.Trim()));
-        if (name.Length == 0) name = $"{item.PageUrl.Host}_{DateTime.Now:yyyyMMdd_HHmmss}";
+        var fileName = ContentDispositionHeaderValue.TryParse(contentDisposition, out var header)
+            ? header.FileNameStar ?? header.FileName?.Trim('"')
+            : null;
+        if (string.IsNullOrEmpty(fileName)) fileName = Uri.UnescapeDataString(url.AbsolutePath.Split('/')[^1]);
 
+        var name = Sanitize(Path.GetFileNameWithoutExtension(fileName));
+        return name.Length == 0 || GenericNames.Contains(name)
+            ? RandomNumberGenerator.GetString("abcdefghijklmnopqrstuvwxyz", 8)
+            : name;
+    }
+
+    // Returns a full path in folder that isTaken rejects for neither the plain nor a " (n)" variant.
+    public static string Build(string name, string folder, string ext, Func<string, bool> isTaken)
+    {
         var path = Path.Combine(folder, name + ext);
         for (var i = 1; isTaken(path); i++) path = Path.Combine(folder, $"{name} ({i}){ext}");
         return path;
-    }
-
-    static string StripSiteSuffix(string title, string site)
-    {
-        foreach (var suffix in KnownSuffixes)
-            if (title.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)) return title[..^suffix.Length];
-
-        // "Title - Site", "Title | Site", "Title_Site". A bare site name (home page) has no separator and is kept.
-        return site.Length == 0
-            ? title
-            : Regex.Replace(title, $@"(?<=\S)\s*[-_|–—]+\s*{Regex.Escape(site)}$", "", RegexOptions.IgnoreCase);
     }
 
     static string Sanitize(string name)

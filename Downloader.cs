@@ -31,6 +31,8 @@ sealed class Downloader(ProxyRelay relay)
 
     public bool HasActive => Tasks.Any(t => t.IsActive);
 
+    public event Action? ActiveChanged;
+
     public void Start(MediaItem item)
     {
         var task = new DownloadTask(item);
@@ -45,7 +47,7 @@ sealed class Downloader(ProxyRelay relay)
 
     async Task RunAsync(DownloadTask task)
     {
-        task.IsActive = true;
+        SetActive(task, true);
         try
         {
             await _slots.WaitAsync(task.Cts.Token);
@@ -72,13 +74,19 @@ sealed class Downloader(ProxyRelay relay)
         }
         finally
         {
-            task.IsActive = false;
+            SetActive(task, false);
         }
+    }
+
+    void SetActive(DownloadTask task, bool active)
+    {
+        task.IsActive = active;
+        ActiveChanged?.Invoke();
     }
 
     async Task<bool> TryRunAsync(DownloadTask task, string ext)
     {
-        var target = FileNamer.Build(task.Item, Settings.Current.SaveFolder, ext,
+        var target = FileNamer.Build(task.Item.Name, Settings.Current.SaveFolder, ext,
             path => _reserved.Contains(path) || File.Exists(path));
         var part = Path.ChangeExtension(target, ".part" + ext);
         _reserved.Add(target);
@@ -130,6 +138,7 @@ sealed class Downloader(ProxyRelay relay)
             if (process.ExitCode == 0)
             {
                 File.Move(part, target);
+                task.FilePath = target;
                 task.Progress = 100;
                 task.Status = "完成";
                 return true;
@@ -172,15 +181,20 @@ sealed class Downloader(ProxyRelay relay)
 
 sealed class DownloadTask(MediaItem item) : INotifyPropertyChanged
 {
-    string _fileName = item.Title;
+    string _fileName = item.Name;
     string _status = "排队中";
     double _progress;
+    bool _isActive;
 
     public MediaItem Item { get; } = item;
 
     public CancellationTokenSource Cts { get; } = new();
 
-    public bool IsActive { get; set; }
+    // Drives the cancel button and progress bar; finished items show neither.
+    public bool IsActive { get => _isActive; set => Set(ref _isActive, value); }
+
+    // Set once the file is complete; double-clicking opens it.
+    public string? FilePath { get; set; }
 
     public string FileName { get => _fileName; set => Set(ref _fileName, value); }
 

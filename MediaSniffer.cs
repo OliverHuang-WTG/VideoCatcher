@@ -9,16 +9,21 @@ sealed class MediaItem
     public required Uri Url { get; init; }
     public required MediaKind Kind { get; init; }
     public long? Size { get; init; }
+
+    // Base file name without extension; the downloader picks the extension.
+    public required string Name { get; init; }
     public required string Referer { get; init; }
     public required string UserAgent { get; init; }
     public required string Cookie { get; init; }
-    public required string Title { get; init; }
-    public required string Site { get; init; }
-    public required Uri PageUrl { get; init; }
 
-    public string TypeText => Path.GetExtension(Url.AbsolutePath) is { Length: > 1 } ext ? ext[1..] : Kind.ToString();
-
-    public string SizeText => Size is { } size ? FormatSize(size) : "";
+    public string Detail
+    {
+        get
+        {
+            var type = Path.GetExtension(Url.AbsolutePath) is { Length: > 1 } ext ? ext[1..] : Kind.ToString();
+            return Size is { } size ? $"{type} · {FormatSize(size)}" : type;
+        }
+    }
 
     public static string FormatSize(long bytes) => bytes >= 1L << 30
         ? $"{bytes / (double)(1L << 30):0.00} GB"
