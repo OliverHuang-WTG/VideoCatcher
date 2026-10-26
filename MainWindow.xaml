@@ -310,6 +310,9 @@
                             <DockPanel DockPanel.Dock="Top">
                                 <Button DockPanel.Dock="Right" Style="{StaticResource IconButton}" Content="&#xE838;"
                                         ToolTip="打开下载文件夹" Click="OpenFolder_Click" />
+                                <Button DockPanel.Dock="Right" Content="清空列表" FontSize="12" Padding="8,2"
+                                        VerticalAlignment="Center" ToolTip="移除已完成、失败和已取消的条目，不删除文件"
+                                        Click="ClearDownloads_Click" />
                                 <TextBlock Text="下载" Style="{StaticResource SectionTitle}" />
                             </DockPanel>
                             <TextBlock x:Name="DownloadEmpty" DockPanel.Dock="Top" Text="暂无下载"

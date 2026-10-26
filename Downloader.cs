@@ -60,6 +60,13 @@ sealed class Downloader(ProxyRelay relay, MediaFetcher fetcher)
         if (task.Record is not null) SaveHistory();
     }
 
+    // Removes finished, failed and cancelled entries; running downloads stay, and files stay on disk.
+    public void ClearFinished()
+    {
+        foreach (var task in Tasks.Where(t => !t.IsActive).ToList()) Tasks.Remove(task);
+        SaveHistory();
+    }
+
     void SaveHistory()
     {
         Directory.CreateDirectory(Path.GetDirectoryName(HistoryPath)!);

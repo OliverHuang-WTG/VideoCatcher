@@ -339,6 +339,12 @@ public partial class MainWindow : Window
         UpdateDownloads();
     }
 
+    void ClearDownloads_Click(object sender, RoutedEventArgs e)
+    {
+        _downloader.ClearFinished();
+        UpdateDownloads();
+    }
+
     void OpenFolder_Click(object sender, RoutedEventArgs e) =>
         Process.Start("explorer.exe", $"\"{Settings.Current.SaveFolder}\"");
 
