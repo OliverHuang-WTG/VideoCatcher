@@ -68,7 +68,7 @@ The toolbar's proxy button is highlighted while the proxy is on; when it's off o
 - Sites that serve audio and video separately (such as bilibili) list two `.m4s` entries; they can only be downloaded separately for now, not merged.
 - Sites using proprietary delivery protocols, such as YouTube, rarely yield usable URLs.
 - Some sites don't allow Google sign-in from an embedded browser.
-- Subtitles aren't downloaded: the bundled minimal ffmpeg has no subtitle components.
+- Limited subtitle support: the bundled minimal ffmpeg only understands WebVTT subtitles in HLS streams; when present, the download is saved as `.mkv` because mp4 can't hold them.
 
 ## Data locations
 

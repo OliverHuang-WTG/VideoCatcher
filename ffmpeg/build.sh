@@ -2,6 +2,8 @@
 # Cross-compiles a minimal LGPL ffmpeg.exe for win64 on Ubuntu (mingw-w64).
 # VideoCatcher only uses ffmpeg for stream copy (-c copy), so it keeps network protocols, demuxers, muxers,
 # parsers and bitstream filters, plus a few decoders that stream probing needs. No encoders, no GPL parts.
+# The webvtt demuxer is required even though subtitles aren't the goal: the hls demuxer reads the first
+# segment of every rendition while opening, so an HLS stream with WebVTT subtitles fails to open without it.
 #
 # Usage: ffmpeg/build.sh <output-dir>   -> <output-dir>/ffmpeg.exe, <output-dir>/ffmpeg-LICENSE.txt
 # The release workflow caches the output keyed on this file's hash, so bump versions here.
@@ -51,7 +53,7 @@ PKG_CONFIG_LIBDIR="$PREFIX/lib/pkgconfig" ./configure \
     --disable-ffplay --disable-ffprobe --disable-avdevice \
     --enable-small --enable-w32threads --enable-schannel --enable-libxml2 \
     --enable-protocol=file,pipe,http,https,tcp,tls,httpproxy,crypto,data \
-    --enable-demuxer=hls,dash,mov,matroska,flv,live_flv,mpegts,avi,asf,aac,mp3 \
+    --enable-demuxer=hls,dash,mov,matroska,flv,live_flv,mpegts,avi,asf,aac,mp3,webvtt \
     --enable-muxer=mp4,ipod,mov,matroska,webm,flv,mpegts,avi,asf \
     --enable-parser=h264,hevc,aac,av1,vp9,opus,mpegaudio,ac3 \
     --enable-bsf=aac_adtstoasc,extract_extradata,h264_mp4toannexb,hevc_mp4toannexb,vp9_superframe \
