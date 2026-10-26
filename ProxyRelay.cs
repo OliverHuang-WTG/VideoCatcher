@@ -159,7 +159,7 @@ sealed class ProxyRelay
         : "Proxy-Authorization: Basic " + Convert.ToBase64String(Encoding.UTF8.GetBytes(Uri.UnescapeDataString(proxy.UserInfo)));
 
     // Returns the header block and any bytes read past it (start of a request body).
-    static async Task<(string Head, byte[] Rest)> ReadHeadAsync(Stream stream)
+    static async Task<(string Head, byte[] Body)> ReadHeadAsync(Stream stream)
     {
         var buffer = new byte[64 * 1024];
         var length = 0;
