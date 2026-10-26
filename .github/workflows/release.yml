@@ -18,34 +18,51 @@ jobs:
 
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 8.0.x
+          dotnet-version: 10.0.x
 
       - name: Resolve version
         run: '"VERSION=$("${{ github.ref_name }}".TrimStart("v"))" >> $env:GITHUB_ENV'
 
+      # full: self-contained, no prerequisites. noruntime: needs the .NET 10 Desktop Runtime; the apphost shows a
+      # download prompt when it's missing. DebugType=none and the empty related-file list drop .pdb/.xml files.
       - name: Publish
-        run: >
-          dotnet publish VideoCatcher.csproj -c Release -r win-x64 --self-contained true
-          -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
-          -p:Version=${{ env.VERSION }} -o publish
+        run: |
+          $common = "-c", "Release", "-r", "win-x64", "-p:Version=$env:VERSION",
+            "-p:PublishSingleFile=true", "-p:IncludeNativeLibrariesForSelfExtract=true",
+            "-p:DebugType=none", "-p:AllowedReferenceRelatedFileExtensions=none"
+          dotnet publish VideoCatcher.csproj @common --self-contained true -p:EnableCompressionInSingleFile=true -o publish/full
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet publish VideoCatcher.csproj @common --self-contained false -o publish/noruntime
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Bundle ffmpeg
         run: |
           Invoke-WebRequest "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/$env:FFMPEG_BUILD.zip" -OutFile ffmpeg.zip
           Expand-Archive ffmpeg.zip -DestinationPath ffmpeg
-          Copy-Item (Get-ChildItem ffmpeg -Recurse -Filter ffmpeg.exe | Select-Object -First 1).FullName publish/
-          Copy-Item (Get-ChildItem ffmpeg -Recurse -Filter LICENSE.txt | Select-Object -First 1).FullName publish/ffmpeg-LICENSE.txt
+          $ffmpeg = (Get-ChildItem ffmpeg -Recurse -Filter ffmpeg.exe | Select-Object -First 1).FullName
+          $license = (Get-ChildItem ffmpeg -Recurse -Filter LICENSE.txt | Select-Object -First 1).FullName
+          foreach ($dir in "publish/full", "publish/noruntime") {
+            Copy-Item $ffmpeg $dir
+            Copy-Item $license "$dir/ffmpeg-LICENSE.txt"
+          }
 
-      - name: Build installer
+      - name: Build installers
         run: |
           choco install innosetup --no-progress -y
-          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DAppVersion=${{ env.VERSION }} installer\VideoCatcher.iss
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          & $iscc /DAppVersion=$env:VERSION /DPublishDir=publish\full installer\VideoCatcher.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $iscc /DAppVersion=$env:VERSION /DPublishDir=publish\noruntime /DOutputSuffix=-NoRuntime installer\VideoCatcher.iss
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: >
-          gh release create ${{ github.ref_name }} dist/VideoCatcher-Setup-${{ env.VERSION }}.exe
-          --title "VideoCatcher ${{ github.ref_name }}"
-          --notes "Windows x64 installer (per-user, no admin). Bundles FFmpeg ${{ env.FFMPEG_BUILD }} (LGPL) from BtbN/FFmpeg-Builds; see ffmpeg-LICENSE.txt in the install folder."
+        run: |
+          $notes = @"
+          - ``VideoCatcher-Setup-$env:VERSION.exe``: includes the .NET runtime, no prerequisites.
+          - ``VideoCatcher-Setup-$env:VERSION-NoRuntime.exe``: smaller, requires the [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0) (x64). If it's missing, the app offers a download link on first launch.
+
+          Both are per-user installs (no admin) and bundle FFmpeg $env:FFMPEG_BUILD (LGPL) from BtbN/FFmpeg-Builds; see ffmpeg-LICENSE.txt in the install folder.
+          "@
+          gh release create $env:GITHUB_REF_NAME (Get-ChildItem dist/*.exe).FullName --title "VideoCatcher $env:GITHUB_REF_NAME" --notes $notes

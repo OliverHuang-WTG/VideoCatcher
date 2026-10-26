@@ -14,10 +14,15 @@
 
 ## 安装
 
-从 [Releases](../../releases) 下载 `VideoCatcher-Setup-x.y.z.exe` 运行即可：
+从 [Releases](../../releases) 下载任一安装包运行：
 
+| 安装包 | 说明 |
+|---|---|
+| `VideoCatcher-Setup-x.y.z.exe` | 自带 .NET 运行时，无需另装任何东西 |
+| `VideoCatcher-Setup-x.y.z-NoRuntime.exe` | 体积更小，需要先装 [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0)（x64）；没装时首次启动会弹出下载提示 |
+
+- 两个安装包都自带 ffmpeg，装的是同一个程序，后装的会覆盖先装的。
 - 按用户安装到 `%LocalAppData%\Programs\VideoCatcher`，不需要管理员权限。
-- 已自带 .NET 运行时和 ffmpeg，无需另装。
 - 依赖 WebView2 Runtime（Windows 11 自带，Windows 10 一般也已安装）。
 - 安装包未签名，SmartScreen 提示「未知发布者」时选「更多信息 → 仍要运行」。
 
@@ -70,7 +75,7 @@ socks5://user:pass@127.0.0.1:1080
 
 ## 从源码构建
 
-需要 .NET 8 SDK：
+需要 .NET 10 SDK：
 
 ```bash
 dotnet publish VideoCatcher.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o publish
@@ -80,7 +85,7 @@ dotnet publish VideoCatcher.csproj -c Release -r win-x64 --self-contained true -
 
 ## 发布
 
-推送 `v*` 格式的 tag 会触发 [release.yml](.github/workflows/release.yml)：发布自包含单文件、下载 ffmpeg、用 Inno Setup 打包，并创建 GitHub Release。
+推送 `v*` 格式的 tag 会触发 [release.yml](.github/workflows/release.yml)：分别发布自包含版和依赖框架版、下载 ffmpeg、用 Inno Setup 打出两个安装包，并创建 GitHub Release。
 
 ```bash
 git tag v0.1.1
