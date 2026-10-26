@@ -161,8 +161,8 @@ public partial class MainWindow : Window
         var count = tab.Media.Count;
         VideoHeader.Text = count > 0 ? $"当前页视频 · {count}" : "当前页视频";
         VideoEmpty.Visibility = count == 0 ? Visibility.Visible : Visibility.Collapsed;
-        SetBadge(VideoBadge, VideoBadgeText, count);
-        SetBadge(RailVideoBadge, RailVideoBadgeText, count);
+        RailBadge.Visibility = count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        RailBadgeText.Text = count > 99 ? "99+" : count.ToString();
 
         var core = tab.View.CoreWebView2;
         var source = core?.Source is { } url and not HomePage ? url : "";
@@ -173,13 +173,8 @@ public partial class MainWindow : Window
         Title = tab.Title == BrowserTab.BlankTitle ? "VideoCatcher" : $"{tab.Title} - VideoCatcher";
     }
 
-    void UpdateDownloads()
-    {
-        var active = _downloader.Tasks.Count(t => t.IsActive);
-        SetBadge(DownloadBadge, DownloadBadgeText, active);
-        SetBadge(RailDownloadBadge, RailDownloadBadgeText, active);
+    void UpdateDownloads() =>
         DownloadEmpty.Visibility = _downloader.Tasks.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-    }
 
     void UpdateProxyButton()
     {
@@ -197,12 +192,6 @@ public partial class MainWindow : Window
         var proxy = new Uri(settings.Proxy);
         var action = on ? "关闭" : "开启";
         ProxyButton.ToolTip = $"{proxy.Scheme}://{proxy.Host}:{proxy.Port}，点击{action}";
-    }
-
-    static void SetBadge(Border badge, TextBlock text, int count)
-    {
-        badge.Visibility = count > 0 ? Visibility.Visible : Visibility.Collapsed;
-        text.Text = count > 99 ? "99+" : count.ToString();
     }
 
     void OpenSettings()

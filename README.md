@@ -33,7 +33,7 @@ Download either installer from [Releases](../../releases) and run it:
 
 1. New tabs open blank with the cursor in the address bar. Open a video page and start playback. The address bar behaves like Edge's: input with a scheme opens as typed; host-like input (such as `example.com` or `localhost:3000`) tries `https://` first and falls back to `http://` if the connection fails; anything else is a Bing search.
 2. The sidebar on the right lists the current page's videos on top and your downloads below; drag the line between them to resize the two sections. Choose Download next to a video; progress appears in the downloads section.
-3. Collapse the sidebar to an icon rail with its arrow button or the toolbar's video and download buttons, and drag its left edge to change its width. Both are remembered.
+3. Collapse the sidebar with its arrow button; it shrinks to a single icon that shows how many videos were captured and expands it again. Drag its left edge to change its width. Both are remembered.
 4. Double-click a finished download to open it in the default player. Right-click it to show it in its folder or remove it from the list (the file stays on disk). Finished downloads are kept across restarts.
 5. Settings holds the save folder, proxy address and minimum file size. The toolbar's proxy button turns the proxy on or off: it's filled with the accent color and reads "代理已开" while on.
 

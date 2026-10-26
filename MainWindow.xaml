@@ -230,24 +230,6 @@
                                        VerticalAlignment="Center" />
                         </StackPanel>
                     </ToggleButton>
-                    <Button Style="{StaticResource IconButton}" ToolTip="当前页视频（展开/收起侧边栏）"
-                            Click="ToggleSidebar_Click">
-                        <Grid Width="32" Height="28">
-                            <TextBlock Text="&#xE714;" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                            <Border x:Name="VideoBadge" Style="{StaticResource Badge}">
-                                <TextBlock x:Name="VideoBadgeText" Style="{StaticResource BadgeText}" />
-                            </Border>
-                        </Grid>
-                    </Button>
-                    <Button Style="{StaticResource IconButton}" ToolTip="下载（展开/收起侧边栏）"
-                            Click="ToggleSidebar_Click">
-                        <Grid Width="32" Height="28">
-                            <TextBlock Text="&#xE896;" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                            <Border x:Name="DownloadBadge" Style="{StaticResource Badge}">
-                                <TextBlock x:Name="DownloadBadgeText" Style="{StaticResource BadgeText}" />
-                            </Border>
-                        </Grid>
-                    </Button>
                     <Button Style="{StaticResource IconButton}" Content="&#xE713;" ToolTip="设置" Click="Settings_Click" />
                 </StackPanel>
 
@@ -369,28 +351,16 @@
                         </DockPanel>
                     </Grid>
 
-                    <DockPanel x:Name="SidebarRail" Width="40" Margin="0,8" LastChildFill="False">
-                        <Button DockPanel.Dock="Bottom" Style="{StaticResource IconButton}" Content="&#xE76B;"
-                                FontSize="12" ToolTip="展开侧边栏" Click="ToggleSidebar_Click" />
-                        <Button DockPanel.Dock="Top" Style="{StaticResource IconButton}" Margin="2,2"
-                                ToolTip="当前页视频" Click="ToggleSidebar_Click">
-                            <Grid Width="32" Height="28">
-                                <TextBlock Text="&#xE714;" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                <Border x:Name="RailVideoBadge" Style="{StaticResource Badge}">
-                                    <TextBlock x:Name="RailVideoBadgeText" Style="{StaticResource BadgeText}" />
-                                </Border>
-                            </Grid>
-                        </Button>
-                        <Button DockPanel.Dock="Top" Style="{StaticResource IconButton}" Margin="2,2"
-                                ToolTip="下载" Click="ToggleSidebar_Click">
-                            <Grid Width="32" Height="28">
-                                <TextBlock Text="&#xE896;" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                <Border x:Name="RailDownloadBadge" Style="{StaticResource Badge}">
-                                    <TextBlock x:Name="RailDownloadBadgeText" Style="{StaticResource BadgeText}" />
-                                </Border>
-                            </Grid>
-                        </Button>
-                    </DockPanel>
+                    <!-- The badge is the only hint of captured videos while the sidebar is collapsed. -->
+                    <Button x:Name="SidebarRail" Style="{StaticResource IconButton}" VerticalAlignment="Top"
+                            Margin="2,8" ToolTip="展开侧边栏" Click="ToggleSidebar_Click">
+                        <Grid Width="32" Height="28">
+                            <TextBlock Text="&#xE714;" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            <Border x:Name="RailBadge" Style="{StaticResource Badge}">
+                                <TextBlock x:Name="RailBadgeText" Style="{StaticResource BadgeText}" />
+                            </Border>
+                        </Grid>
+                    </Button>
                 </Grid>
             </Border>
         </Grid>
