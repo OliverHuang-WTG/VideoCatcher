@@ -2,17 +2,22 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
+using System.Windows.Interop;
 using Microsoft.Web.WebView2.Core;
 
 namespace VideoCatcher;
 
 public partial class MainWindow : Window
 {
-    const string HomePage = "https://www.bing.com";
+    const string HomePage = "about:blank";
     const double TabWidth = 240;
+    const double SidebarMinWidth = 260;
+    const double SidebarMaxWidth = 600;
 
     readonly ProxyRelay _relay = new(Settings.Current.UpstreamProxy);
     readonly Downloader _downloader;
@@ -25,21 +30,45 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         TabStrip.ItemsSource = _tabs;
-        _downloader = new Downloader(_relay);
+        Fetcher = new MediaFetcher(_relay);
+        _downloader = new Downloader(_relay, Fetcher);
         _downloader.ActiveChanged += UpdateDownloads;
         DownloadList.ItemsSource = _downloader.Tasks;
+        UpdateDownloads();
         UpdateProxyButton();
+        ApplySidebar();
 
         // All tabs share one environment, so one profile (logins persist) and one proxy argument.
         var userData = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "VideoCatcher", "WebView2");
         _env = CoreWebView2Environment.CreateAsync(null, userData,
-            new CoreWebView2EnvironmentOptions($"--proxy-server=http://127.0.0.1:{_relay.Port}"));
+            new CoreWebView2EnvironmentOptions($"--proxy-server=http://127.0.0.1:{_relay.Port}")
+            {
+                // Edge's thin overlay scrollbars instead of Chromium's classic ones.
+                ScrollBarStyle = CoreWebView2ScrollbarStyle.FluentOverlay,
+            });
 
         Loaded += (_, _) => _ = NewTab(HomePage);
     }
 
+    // Shared by tabs (reading captured playlists) and the downloader.
+    internal MediaFetcher Fetcher { get; }
+
     BrowserTab? Current => TabStrip.SelectedItem as BrowserTab;
+
+    [DllImport("dwmapi.dll")]
+    static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
+
+    // Windows 11 doesn't round custom-chrome windows by default. Windows 10 rejects the attribute and stays square;
+    // maximized and fullscreen windows are never rounded.
+    protected override void OnSourceInitialized(EventArgs e)
+    {
+        base.OnSourceInitialized(e);
+        const int DWMWA_WINDOW_CORNER_PREFERENCE = 33, DWMWCP_ROUND = 2;
+        var preference = DWMWCP_ROUND;
+        DwmSetWindowAttribute(new WindowInteropHelper(this).Handle, DWMWA_WINDOW_CORNER_PREFERENCE,
+            ref preference, sizeof(int));
+    }
 
     // url == null leaves the page blank so it can be handed to NewWindowRequested.
     internal async Task<CoreWebView2> NewTab(string? url)
@@ -50,6 +79,8 @@ public partial class MainWindow : Window
         TabStrip.SelectedItem = tab;
         LayoutTabs();
         await tab.InitAsync(await _env, url);
+        // Like Edge, a new blank tab is ready for typing.
+        if (url == HomePage) Address.Focus();
         return tab.View.CoreWebView2;
     }
 
@@ -77,8 +108,8 @@ public partial class MainWindow : Window
     internal void SetFullScreen(bool on)
     {
         _fullScreen = on;
-        VideoPopup.IsOpen = DownloadPopup.IsOpen = false;
         TitleBar.Visibility = Toolbar.Visibility = on ? Visibility.Collapsed : Visibility.Visible;
+        ApplySidebar();
         if (on)
         {
             _stateBeforeFullScreen = WindowState;
@@ -101,42 +132,71 @@ public partial class MainWindow : Window
         TabStrip.Width = Math.Max(0, Math.Min(_tabs.Count * TabWidth, available));
     }
 
+    // Expanded: resizable panel. Collapsed: icon rail sized to its content. Fullscreen: hidden.
+    void ApplySidebar()
+    {
+        var expanded = Settings.Current.SidebarExpanded;
+        var panel = expanded && !_fullScreen;
+        Sidebar.Visibility = _fullScreen ? Visibility.Collapsed : Visibility.Visible;
+        SidebarPanel.Visibility = expanded ? Visibility.Visible : Visibility.Collapsed;
+        SidebarRail.Visibility = expanded ? Visibility.Collapsed : Visibility.Visible;
+        SidebarSplitter.Visibility = panel ? Visibility.Visible : Visibility.Collapsed;
+        SidebarColumn.MinWidth = panel ? SidebarMinWidth : 0;
+        SidebarColumn.MaxWidth = panel ? SidebarMaxWidth : double.PositiveInfinity;
+        SidebarColumn.Width = panel ? new GridLength(Settings.Current.SidebarWidth) : GridLength.Auto;
+    }
+
+    void SetSidebarExpanded(bool expanded)
+    {
+        Settings.Current.SidebarExpanded = expanded;
+        Settings.Current.Save();
+        ApplySidebar();
+    }
+
     void ShowTab(BrowserTab tab)
     {
         foreach (UIElement view in Views.Children)
             view.Visibility = view == tab.View ? Visibility.Visible : Visibility.Collapsed;
         VideoList.ItemsSource = tab.Media;
-        VideoEmpty.Visibility = tab.Media.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-        SetBadge(VideoBadge, VideoBadgeText, tab.Media.Count);
+        var count = tab.Media.Count;
+        VideoHeader.Text = count > 0 ? $"当前页视频 · {count}" : "当前页视频";
+        VideoEmpty.Visibility = count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        SetBadge(VideoBadge, VideoBadgeText, count);
+        SetBadge(RailVideoBadge, RailVideoBadgeText, count);
 
         var core = tab.View.CoreWebView2;
-        var source = core?.Source ?? "";
+        var source = core?.Source is { } url and not HomePage ? url : "";
         if (!Address.IsKeyboardFocusWithin) Address.Text = source;
         AddressIcon.Text = source.StartsWith("https://") ? "" : "";
         BackButton.IsEnabled = core?.CanGoBack == true;
         ForwardButton.IsEnabled = core?.CanGoForward == true;
-        Title = string.IsNullOrEmpty(core?.DocumentTitle) ? "VideoCatcher" : $"{core.DocumentTitle} - VideoCatcher";
+        Title = tab.Title == BrowserTab.BlankTitle ? "VideoCatcher" : $"{tab.Title} - VideoCatcher";
     }
 
     void UpdateDownloads()
     {
-        SetBadge(DownloadBadge, DownloadBadgeText, _downloader.Tasks.Count(t => t.IsActive));
+        var active = _downloader.Tasks.Count(t => t.IsActive);
+        SetBadge(DownloadBadge, DownloadBadgeText, active);
+        SetBadge(RailDownloadBadge, RailDownloadBadgeText, active);
         DownloadEmpty.Visibility = _downloader.Tasks.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
     }
 
     void UpdateProxyButton()
     {
         var settings = Settings.Current;
-        ProxyButton.IsChecked = settings.UpstreamProxy is not null;
+        var on = settings.UpstreamProxy is not null;
+        ProxyButton.IsChecked = on;
         if (settings.Proxy.Length == 0)
         {
+            ProxyLabel.Text = "设置代理";
             ProxyButton.ToolTip = "未设置代理，点击设置";
             return;
         }
+        ProxyLabel.Text = on ? "代理已开" : "代理已关";
         // Host and port only: the address may carry credentials.
         var proxy = new Uri(settings.Proxy);
-        var state = settings.ProxyEnabled ? "开启" : "关闭";
-        ProxyButton.ToolTip = $"代理已{state}：{proxy.Scheme}://{proxy.Host}:{proxy.Port}";
+        var action = on ? "关闭" : "开启";
+        ProxyButton.ToolTip = $"{proxy.Scheme}://{proxy.Host}:{proxy.Port}，点击{action}";
     }
 
     static void SetBadge(Border badge, TextBlock text, int count)
@@ -150,6 +210,22 @@ public partial class MainWindow : Window
         new SettingsWindow(_relay, _downloader) { Owner = this }.ShowDialog();
         UpdateProxyButton();
     }
+
+    void OpenDownload(DownloadTask task)
+    {
+        if (ExistingFile(task) is { } path) Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
+    }
+
+    // Null when the download isn't finished, or the file was deleted since (the status then says so).
+    static string? ExistingFile(DownloadTask task)
+    {
+        if (task.Record is not { } record) return null;
+        if (File.Exists(record.FilePath)) return record.FilePath;
+        task.Status = "文件已移除";
+        return null;
+    }
+
+    static DownloadTask TaskOf(object sender) => (DownloadTask)((FrameworkElement)sender).DataContext;
 
     void Window_StateChanged(object? sender, EventArgs e)
     {
@@ -203,7 +279,7 @@ public partial class MainWindow : Window
         }
         else if (e.Key == Key.Escape)
         {
-            Address.Text = tab.View.CoreWebView2?.Source ?? "";
+            Address.Text = tab.View.CoreWebView2?.Source is { } url and not HomePage ? url : "";
             tab.View.Focus();
         }
     }
@@ -239,22 +315,39 @@ public partial class MainWindow : Window
 
     void Settings_Click(object sender, RoutedEventArgs e) => OpenSettings();
 
-    // Like Edge, starting a download swaps the video list for the downloads flyout.
+    void ToggleSidebar_Click(object sender, RoutedEventArgs e) => SetSidebarExpanded(!Settings.Current.SidebarExpanded);
+
+    void SidebarSplitter_DragCompleted(object sender, DragCompletedEventArgs e)
+    {
+        Settings.Current.SidebarWidth = SidebarColumn.ActualWidth;
+        Settings.Current.Save();
+    }
+
+    // The new download appears at the top of the downloads section, so make sure the sidebar shows it.
     void Download_Click(object sender, RoutedEventArgs e)
     {
         _downloader.Start((MediaItem)((FrameworkElement)sender).DataContext);
-        VideoPopup.IsOpen = false;
-        DownloadPopup.IsOpen = true;
+        if (!Settings.Current.SidebarExpanded) SetSidebarExpanded(true);
     }
 
-    void Cancel_Click(object sender, RoutedEventArgs e) =>
-        ((DownloadTask)((FrameworkElement)sender).DataContext).Cts.Cancel();
+    void Cancel_Click(object sender, RoutedEventArgs e) => TaskOf(sender).Cts.Cancel();
 
     void DownloadList_MouseDoubleClick(object sender, MouseButtonEventArgs e)
     {
-        if ((e.OriginalSource as FrameworkElement)?.DataContext is not DownloadTask { FilePath: { } path } task) return;
-        if (File.Exists(path)) Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
-        else task.Status = "文件已移除";
+        if ((e.OriginalSource as FrameworkElement)?.DataContext is DownloadTask task) OpenDownload(task);
+    }
+
+    void OpenDownload_Click(object sender, RoutedEventArgs e) => OpenDownload(TaskOf(sender));
+
+    void ShowInFolder_Click(object sender, RoutedEventArgs e)
+    {
+        if (ExistingFile(TaskOf(sender)) is { } path) Process.Start("explorer.exe", $"/select,\"{path}\"");
+    }
+
+    void RemoveDownload_Click(object sender, RoutedEventArgs e)
+    {
+        _downloader.Remove(TaskOf(sender));
+        UpdateDownloads();
     }
 
     void OpenFolder_Click(object sender, RoutedEventArgs e) =>

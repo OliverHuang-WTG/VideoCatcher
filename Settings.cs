@@ -23,6 +23,10 @@ sealed class Settings
 
     public int MinSizeMB { get; set; } = 1;
 
+    public bool SidebarExpanded { get; set; } = true;
+
+    public double SidebarWidth { get; set; } = 320;
+
     [JsonIgnore]
     public Uri? UpstreamProxy => ProxyEnabled && Proxy.Length > 0 ? new Uri(Proxy) : null;
 

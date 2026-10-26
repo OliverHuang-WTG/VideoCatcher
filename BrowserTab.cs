@@ -29,9 +29,14 @@ sealed class BrowserTab(MainWindow owner) : INotifyPropertyChanged
         CoreWebView2WebErrorStatus.CannotConnect,
     ];
 
+    public const string BlankTitle = "新标签";
+
     readonly HashSet<string> _seen = [];
+
+    // Variant and rendition playlists of a captured master: the master's entry already downloads them.
+    readonly HashSet<string> _children = [];
     bool _hasManifest;
-    string _title = "新标签";
+    string _title = BlankTitle;
     ImageSource? _favicon;
 
     // A typed host navigates to https first; if that navigation fails, _httpFallback is tried once.
@@ -55,7 +60,7 @@ sealed class BrowserTab(MainWindow owner) : INotifyPropertyChanged
         var core = View.CoreWebView2;
         core.DocumentTitleChanged += (_, _) =>
         {
-            Title = core.DocumentTitle;
+            Title = core.Source == "about:blank" || core.DocumentTitle.Length == 0 ? BlankTitle : core.DocumentTitle;
             owner.OnTabChanged(this);
         };
         core.FaviconChanged += async (_, _) => Favicon = await LoadFaviconAsync(core);
@@ -70,6 +75,7 @@ sealed class BrowserTab(MainWindow owner) : INotifyPropertyChanged
             }
             Media.Clear();
             _seen.Clear();
+            _children.Clear();
             _hasManifest = false;
             owner.OnTabChanged(this);
         };
@@ -147,7 +153,7 @@ sealed class BrowserTab(MainWindow owner) : INotifyPropertyChanged
         if (url.Scheme is not ("http" or "https")) return;
         // Range requests for the same file differ only in query/headers; one entry per path.
         var key = url.GetLeftPart(UriPartial.Path);
-        if (_seen.Contains(key)) return;
+        if (_seen.Contains(key) || _children.Contains(key)) return;
 
         var size = MediaSniffer.TotalSize(
             GetHeader(e.Response.Headers, "Content-Range"), GetHeader(e.Response.Headers, "Content-Length"));
@@ -155,25 +161,58 @@ sealed class BrowserTab(MainWindow owner) : INotifyPropertyChanged
             Settings.Current.MinSizeMB * 1024L * 1024, _hasManifest);
         if (kind is null) return;
         _seen.Add(key);
-        if (kind == MediaKind.Manifest) _hasManifest = true;
+        if (kind is MediaKind.Hls or MediaKind.Dash) _hasManifest = true;
 
         // Read everything from the event args before awaiting; they aren't guaranteed valid afterwards.
         var core = View.CoreWebView2;
         var name = FileNamer.SourceName(url, GetHeader(e.Response.Headers, "Content-Disposition"));
         var referer = GetHeader(e.Request.Headers, "Referer") ?? core.Source;
         var userAgent = GetHeader(e.Request.Headers, "User-Agent") ?? core.Settings.UserAgent;
+        var playlist = kind == MediaKind.Hls ? e.Response.GetContentAsync() : null;
         var cookies = await core.CookieManager.GetCookiesAsync(url.AbsoluteUri);
-        Media.Add(new MediaItem
+        var item = new MediaItem
         {
             Url = url,
             Kind = kind.Value,
-            Size = size,
+            Size = kind == MediaKind.Hls ? null : size, // a playlist's own length says nothing about the video
             Name = name,
             Referer = referer,
             UserAgent = userAgent,
             Cookie = string.Join("; ", cookies.Select(c => $"{c.Name}={c.Value}")),
-        });
+        };
+        if (playlist is not null) item = await DescribeHlsAsync(item, playlist);
+        // A master captured while this one was being read may cover it.
+        if (_children.Contains(key)) return;
+        Media.Add(item);
         owner.OnTabChanged(this);
+    }
+
+    // Adds size, resolution and duration from the playlist, and drops entries for playlists a master references.
+    async Task<MediaItem> DescribeHlsAsync(MediaItem item, Task<Stream> content)
+    {
+        try
+        {
+            using var reader = new StreamReader(await content);
+            var source = await owner.Fetcher.LoadHlsAsync(item, await reader.ReadToEndAsync(), CancellationToken.None);
+            foreach (var child in source.Children.Select(c => c.GetLeftPart(UriPartial.Path)))
+            {
+                _children.Add(child);
+                foreach (var listed in Media.Where(m => m.Url.GetLeftPart(UriPartial.Path) == child).ToList())
+                    Media.Remove(listed);
+            }
+            return item with
+            {
+                Size = await owner.Fetcher.EstimateSizeAsync(item, source, CancellationToken.None),
+                SizeIsEstimate = true,
+                Resolution = source.Variant?.Resolution,
+                Duration = source.Video.IsLive ? null : source.Video.Duration,
+            };
+        }
+        // Best effort: a playlist that can't be read or parsed is still listed, just without the details.
+        catch (Exception)
+        {
+            return item;
+        }
     }
 
     static string? GetHeader(IEnumerable<KeyValuePair<string, string>> headers, string name) =>
