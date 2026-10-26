@@ -1,15 +1,7 @@
-; Built by .github/workflows/release.yml, once per publish flavor:
-;   ISCC /DAppVersion=x.y.z /DPublishDir=publish\noruntime /DOutputSuffix=-NoRuntime installer\VideoCatcher.iss
-; Both flavors share AppId, so installing one replaces the other.
+; Built by .github/workflows/release.yml: ISCC /DAppVersion=x.y.z installer\VideoCatcher.iss
 #define AppName "VideoCatcher"
 #ifndef AppVersion
   #define AppVersion "0.0.0"
-#endif
-#ifndef PublishDir
-  #define PublishDir "publish\full"
-#endif
-#ifndef OutputSuffix
-  #define OutputSuffix ""
 #endif
 
 [Setup]
@@ -24,7 +16,7 @@ DisableProgramGroupPage=yes
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir=..\dist
-OutputBaseFilename=VideoCatcher-Setup-{#AppVersion}{#OutputSuffix}
+OutputBaseFilename=VideoCatcher-Setup-{#AppVersion}
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
@@ -34,7 +26,7 @@ UninstallDisplayIcon={app}\VideoCatcher.exe
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-Source: "..\{#PublishDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs
+Source: "..\publish\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs
 
 [Icons]
 Name: "{autoprograms}\{#AppName}"; Filename: "{app}\VideoCatcher.exe"

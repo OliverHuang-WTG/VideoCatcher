@@ -71,26 +71,20 @@ jobs:
             "{0}: {1:N0} bytes" -f $name, (Get-Item "smoke-$name.mp4").Length
           }
 
-      # full: self-contained, no prerequisites. noruntime: needs the .NET 10 Desktop Runtime; the apphost shows a
-      # download prompt when it's missing. DebugType=none and the empty related-file list drop .pdb/.xml files.
+      # Framework-dependent: needs the .NET 10 Desktop Runtime, and the apphost shows a download prompt when it's
+      # missing. DebugType=none and the empty related-file list drop .pdb/.xml files.
       - name: Publish
         run: |
-          $common = "-c", "Release", "-r", "win-x64", "-p:Version=$env:VERSION",
-            "-p:PublishSingleFile=true", "-p:IncludeNativeLibrariesForSelfExtract=true",
-            "-p:DebugType=none", "-p:AllowedReferenceRelatedFileExtensions=none"
-          dotnet publish VideoCatcher.csproj @common --self-contained true -p:EnableCompressionInSingleFile=true -o publish/full
+          dotnet publish VideoCatcher.csproj -c Release -r win-x64 --self-contained false -p:Version=$env:VERSION `
+            -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:DebugType=none -p:AllowedReferenceRelatedFileExtensions=none -o publish
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          dotnet publish VideoCatcher.csproj @common --self-contained false -o publish/noruntime
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          foreach ($dir in "publish/full", "publish/noruntime") { Copy-Item ffmpeg-out/* $dir }
+          Copy-Item ffmpeg-out/* publish
 
-      - name: Build installers
+      - name: Build installer
         run: |
           choco install innosetup --no-progress -y
-          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
-          & $iscc /DAppVersion=$env:VERSION /DPublishDir=publish\full installer\VideoCatcher.iss
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & $iscc /DAppVersion=$env:VERSION /DPublishDir=publish\noruntime /DOutputSuffix=-NoRuntime installer\VideoCatcher.iss
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DAppVersion=$env:VERSION installer\VideoCatcher.iss
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Create release
@@ -99,9 +93,8 @@ jobs:
         run: |
           $ffmpegVersion = ((& ffmpeg-out/ffmpeg.exe -version | Select-Object -First 1) -split ' ')[2]
           $notes = @"
-          - ``VideoCatcher-Setup-$env:VERSION.exe``: includes the .NET runtime, no prerequisites.
-          - ``VideoCatcher-Setup-$env:VERSION-NoRuntime.exe``: smaller, requires the [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0) (x64). If it's missing, the app offers a download link on first launch.
+          ``VideoCatcher-Setup-$env:VERSION.exe`` requires the [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0) (x64); if it's missing, the app offers a download link on first launch.
 
-          Both are per-user installs (no admin) and bundle a minimal LGPL build of FFmpeg $ffmpegVersion, compiled from https://github.com/FFmpeg/FFmpeg/tree/n$ffmpegVersion by [ffmpeg/build.sh](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/ffmpeg/build.sh). ``ffmpeg -version`` lists the configure flags; the license is in ffmpeg-LICENSE.txt in the install folder.
+          Per-user install (no admin). Bundles a minimal LGPL build of FFmpeg $ffmpegVersion, compiled from https://github.com/FFmpeg/FFmpeg/tree/n$ffmpegVersion by [ffmpeg/build.sh](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/ffmpeg/build.sh). ``ffmpeg -version`` lists the configure flags; the license is in ffmpeg-LICENSE.txt in the install folder.
           "@
           gh release create $env:GITHUB_REF_NAME (Get-ChildItem dist/*.exe).FullName --title "VideoCatcher $env:GITHUB_REF_NAME" --notes $notes
