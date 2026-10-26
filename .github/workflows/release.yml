@@ -8,11 +8,33 @@ permissions:
   contents: write
 
 jobs:
+  ffmpeg:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # build.sh pins the sources, so its hash fully identifies the output.
+      - id: cache
+        uses: actions/cache@v4
+        with:
+          path: ffmpeg-out
+          key: ffmpeg-${{ hashFiles('ffmpeg/build.sh') }}
+
+      - name: Build ffmpeg
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gcc-mingw-w64-x86-64
+          bash ffmpeg/build.sh ffmpeg-out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg
+          path: ffmpeg-out
+
   release:
+    needs: ffmpeg
     runs-on: windows-latest
-    env:
-      # LGPL build so bundling ffmpeg doesn't put the whole package under GPL; pinned to the 9.0 release branch.
-      FFMPEG_BUILD: ffmpeg-n9.0-latest-win64-lgpl-9.0
     steps:
       - uses: actions/checkout@v4
 
@@ -20,8 +42,34 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
+      - uses: actions/download-artifact@v4
+        with:
+          name: ffmpeg
+          path: ffmpeg-out
+
       - name: Resolve version
         run: '"VERSION=$("${{ github.ref_name }}".TrimStart("v"))" >> $env:GITHUB_ENV'
+
+      # The build is stripped down, so check the pieces VideoCatcher relies on against real public streams:
+      # HLS with TS segments, HLS with fMP4 segments, and DASH with separate audio/video.
+      # -sn: the Apple stream carries WebVTT subtitles, which the build has no demuxer for.
+      - name: Smoke test ffmpeg
+        run: |
+          $ffmpeg = "ffmpeg-out/ffmpeg.exe"
+          $protocols = & $ffmpeg -hide_banner -protocols | Out-String
+          foreach ($name in "https", "httpproxy", "crypto") {
+            if ($protocols -notmatch "(?m)^\s+$name\s*$") { throw "ffmpeg is missing protocol $name" }
+          }
+          $streams = @{
+            "hls-ts"   = "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8"
+            "hls-fmp4" = "https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_fmp4/master.m3u8"
+            "dash"     = "https://dash.akamaized.net/akamai/bbb_30fps/bbb_30fps.mpd"
+          }
+          foreach ($name in $streams.Keys) {
+            & $ffmpeg -hide_banner -nostdin -y -loglevel error -t 5 -i $streams[$name] -sn -c copy "smoke-$name.mp4"
+            if ($LASTEXITCODE -ne 0 -or (Get-Item "smoke-$name.mp4").Length -eq 0) { throw "ffmpeg failed on $name" }
+            "{0}: {1:N0} bytes" -f $name, (Get-Item "smoke-$name.mp4").Length
+          }
 
       # full: self-contained, no prerequisites. noruntime: needs the .NET 10 Desktop Runtime; the apphost shows a
       # download prompt when it's missing. DebugType=none and the empty related-file list drop .pdb/.xml files.
@@ -34,17 +82,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           dotnet publish VideoCatcher.csproj @common --self-contained false -o publish/noruntime
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-      - name: Bundle ffmpeg
-        run: |
-          Invoke-WebRequest "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/$env:FFMPEG_BUILD.zip" -OutFile ffmpeg.zip
-          Expand-Archive ffmpeg.zip -DestinationPath ffmpeg
-          $ffmpeg = (Get-ChildItem ffmpeg -Recurse -Filter ffmpeg.exe | Select-Object -First 1).FullName
-          $license = (Get-ChildItem ffmpeg -Recurse -Filter LICENSE.txt | Select-Object -First 1).FullName
-          foreach ($dir in "publish/full", "publish/noruntime") {
-            Copy-Item $ffmpeg $dir
-            Copy-Item $license "$dir/ffmpeg-LICENSE.txt"
-          }
+          foreach ($dir in "publish/full", "publish/noruntime") { Copy-Item ffmpeg-out/* $dir }
 
       - name: Build installers
         run: |
@@ -59,10 +97,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          $ffmpegVersion = ((& ffmpeg-out/ffmpeg.exe -version | Select-Object -First 1) -split ' ')[2]
           $notes = @"
           - ``VideoCatcher-Setup-$env:VERSION.exe``: includes the .NET runtime, no prerequisites.
           - ``VideoCatcher-Setup-$env:VERSION-NoRuntime.exe``: smaller, requires the [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0) (x64). If it's missing, the app offers a download link on first launch.
 
-          Both are per-user installs (no admin) and bundle FFmpeg $env:FFMPEG_BUILD (LGPL) from BtbN/FFmpeg-Builds; see ffmpeg-LICENSE.txt in the install folder.
+          Both are per-user installs (no admin) and bundle a minimal LGPL build of FFmpeg $ffmpegVersion, compiled from https://github.com/FFmpeg/FFmpeg/tree/n$ffmpegVersion by [ffmpeg/build.sh](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/ffmpeg/build.sh). ``ffmpeg -version`` lists the configure flags; the license is in ffmpeg-LICENSE.txt in the install folder.
           "@
           gh release create $env:GITHUB_REF_NAME (Get-ChildItem dist/*.exe).FullName --title "VideoCatcher $env:GITHUB_REF_NAME" --notes $notes

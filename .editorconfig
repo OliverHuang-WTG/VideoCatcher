@@ -11,6 +11,10 @@ indent_size = 4
 [*.{csproj,yml}]
 indent_size = 2
 
+# Runs on Linux CI; CRLF would break bash.
+[*.sh]
+end_of_line = lf
+
 [*.cs]
 max_line_length = 120
 csharp_style_namespace_declarations = file_scoped:warning
